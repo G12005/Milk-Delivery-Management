@@ -12,10 +12,12 @@ export default function DailyDeliveriesPage() {
     const [savingRowKey, setSavingRowKey] = useState(null);
 
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+    const todayStr = new Date().toISOString().split('T')[0];
     const [filterRoute, setFilterRoute] = useState('');
 
     // Local state for quantities edited by user before or after checking
     const [localQtyMap, setLocalQtyMap] = useState({});
+    const [addedProductsMap, setAddedProductsMap] = useState({}); // customer_id -> [{ product_id, qty }]
 
     const fetchData = async () => {
         try {
@@ -43,8 +45,19 @@ export default function DailyDeliveriesPage() {
         } catch (e) { console.error(e); }
     };
 
+    // fetch deliveries for specific date immediately
+    const fetchDeliveriesFor = async (date) => {
+        try {
+            let url = `/api/daily-deliveries?date=${date}`;
+            if (filterRoute) url += `&route_id=${filterRoute}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            setDeliveries(Array.isArray(data) ? data : []);
+        } catch (e) { console.error(e); }
+    };
+
     useEffect(() => { fetchData(); }, []);
-    useEffect(() => { if (!loading) fetchDeliveries(); }, [filterDate, filterRoute, loading]);
+    useEffect(() => { if (!loading) fetchDeliveries(); }, [filterRoute, loading]);
 
     // Assigned agent for selected route
     const selectedRouteAgent = useMemo(() => {
@@ -82,6 +95,21 @@ export default function DailyDeliveriesPage() {
             } else if (products.length > 0) {
                 items = [{ product_id: products[0].id, quantity: 1.0 }];
             }
+
+            // include any user-added products for this customer
+            const added = addedProductsMap[cust.id] || [];
+            if (added.length > 0) {
+                items = items.concat(added.map(a => ({ product_id: a.product_id, quantity: a.qty })));
+            }
+
+            // ensure any deliveries present in DB for this customer but not in subscription/items are included
+            const custDeliveries = deliveries.filter(d => String(d.customer_id) === String(cust.id));
+            const itemProductIds = new Set(items.map(it => String(it.product_id)));
+            custDeliveries.forEach(d => {
+                if (!itemProductIds.has(String(d.product_id))) {
+                    items.push({ product_id: d.product_id, quantity: d.quantity });
+                }
+            });
 
             const rowItems = items.map(sub => {
                 const rowKey = `${cust.id}_${sub.product_id}`;
@@ -165,6 +193,34 @@ export default function DailyDeliveriesPage() {
         }
     };
 
+    const addProductForCustomer = async (customerId, productId) => {
+        if (!productId) return;
+        const rowKey = `${customerId}_${productId}`;
+        const defaultQty = 1.0;
+        setSavingRowKey(rowKey);
+        try {
+            // create delivery record immediately
+            const payload = {
+                customer_id: customerId,
+                product_id: productId,
+                delivery_date: filterDate,
+                quantity: defaultQty
+            };
+            await fetch('/api/daily-deliveries', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            // refresh deliveries from server so UI shows persisted record
+            await fetchDeliveriesFor(filterDate);
+            setLocalQtyMap(prev => ({ ...prev, [rowKey]: defaultQty }));
+            showToast('Product added and saved');
+        } catch (e) {
+            showToast('Error saving added product', 'error');
+        }
+        setSavingRowKey(null);
+    };
+
     const toggleVerification = async (row) => {
         setSavingRowKey(row.rowKey);
         try {
@@ -243,7 +299,16 @@ export default function DailyDeliveriesPage() {
             <div className="filters-bar" style={{ flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>Date:</label>
-                    <input className="form-control" type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={{ width: 160 }} />
+                    <input className="form-control" type="date" value={filterDate} onChange={(e) => {
+                        const newDate = e.target.value;
+                        setFilterDate(newDate);
+                        // clear local transient state so previous date values do not leak
+                        setDeliveries([]);
+                        setLocalQtyMap({});
+                        setAddedProductsMap({});
+                        // fetch fresh data for selected date
+                        fetchDeliveriesFor(newDate);
+                    }} style={{ width: 160 }} max={todayStr} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>Route:</label>
@@ -318,6 +383,15 @@ export default function DailyDeliveriesPage() {
                                                         {group.address}
                                                     </div>
                                                 )}
+
+                                                <div style={{ marginTop: 8 }}>
+                                                    <select className="form-control" style={{ width: 220 }} onChange={(e) => addProductForCustomer(group.customer_id, e.target.value)} value="">
+                                                        <option value="">+ Add product</option>
+                                                        {products.map(p => (
+                                                            <option key={p.id} value={p.id}>{p.name} — ₹{parseFloat(p.price || 0).toFixed(2)}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </td>
                                         )}
 

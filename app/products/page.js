@@ -8,6 +8,9 @@ export default function ProductsPage() {
     const [companies, setCompanies] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editProduct, setEditProduct] = useState(null);
+    const [editPrice, setEditPrice] = useState('');
     const [filterCompany, setFilterCompany] = useState('');
     const [form, setForm] = useState({ company_id: '', name: '', unit: 'packet', price: '' });
 
@@ -42,6 +45,29 @@ export default function ProductsPage() {
         await fetch(`/api/products/${id}`, { method: 'DELETE' });
         showToast('Product deleted');
         fetchData();
+    };
+
+    const openEdit = (p) => {
+        setEditProduct(p);
+        setEditPrice(p.price);
+        setShowEditModal(true);
+    };
+
+    const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!editProduct) return;
+        try {
+            await fetch(`/api/products/${editProduct.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ price: parseFloat(editPrice) })
+            });
+            showToast('Price updated');
+            setShowEditModal(false);
+            fetchData();
+        } catch (err) {
+            showToast('Error updating price', 'error');
+        }
     };
 
     const filtered = filterCompany ? products.filter((p) => String(p.company_id) === filterCompany) : products;
@@ -87,7 +113,10 @@ export default function ProductsPage() {
                                 <td>{p.unit}</td>
                                 <td>₹{parseFloat(p.price).toFixed(2)}</td>
                                 <td><span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? 'Active' : 'Inactive'}</span></td>
-                                <td><button className="btn-icon" onClick={() => handleDelete(p.id)}>🗑️</button></td>
+                                <td>
+                                    <button className="btn-icon" onClick={() => openEdit(p)} title="Edit price">✏️</button>
+                                    <button className="btn-icon" onClick={() => handleDelete(p.id)} title="Delete">🗑️</button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -124,6 +153,23 @@ export default function ProductsPage() {
                     <div className="modal-actions">
                         <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                         <button type="submit" className="btn btn-primary">Add Product</button>
+                    </div>
+                </form>
+            </Modal>
+
+            <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Product Price">
+                <form onSubmit={handleEditSubmit}>
+                    <div className="form-group">
+                        <label>Product</label>
+                        <input className="form-control" value={editProduct?.name || ''} disabled />
+                    </div>
+                    <div className="form-group">
+                        <label>Price (₹) *</label>
+                        <input className="form-control" type="number" step="0.01" required value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+                    </div>
+                    <div className="modal-actions">
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)}>Cancel</button>
+                        <button type="submit" className="btn btn-primary">Save</button>
                     </div>
                 </form>
             </Modal>

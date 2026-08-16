@@ -69,9 +69,16 @@ export async function POST(request) {
     try {
         const body = await request.json();
         const db = getDatabases();
+        const today = new Date().toISOString().split('T')[0];
 
         const createOrUpdateDelivery = async (item) => {
             const { id, customer_id, product_id, delivery_date, quantity, rate } = item;
+            if (!delivery_date) throw new Error('delivery_date required');
+            if (delivery_date > today) {
+                const err = new Error('Delivery date cannot be in the future');
+                err.status = 400;
+                throw err;
+            }
             
             // Check rate from product if not passed
             let finalRate = rate !== undefined ? parseFloat(rate) : 0;
@@ -137,10 +144,17 @@ export async function POST(request) {
         };
 
         if (Array.isArray(body)) {
+            // validate dates first
+            for (const item of body) {
+                if (!item.delivery_date) return NextResponse.json({ error: 'delivery_date required' }, { status: 400 });
+                if (item.delivery_date > today) return NextResponse.json({ error: 'Delivery date cannot be in the future' }, { status: 400 });
+            }
             const results = await Promise.all(body.map(item => createOrUpdateDelivery(item)));
             return NextResponse.json(results, { status: 200 });
         }
 
+        if (!body.delivery_date) return NextResponse.json({ error: 'delivery_date required' }, { status: 400 });
+        if (body.delivery_date > today) return NextResponse.json({ error: 'Delivery date cannot be in the future' }, { status: 400 });
         const result = await createOrUpdateDelivery(body);
         return NextResponse.json(result, { status: 200 });
     } catch (error) {

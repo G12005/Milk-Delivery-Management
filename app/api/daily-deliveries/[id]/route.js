@@ -3,9 +3,14 @@ import { NextResponse } from 'next/server';
 
 async function handleUpdate(request, params) {
     try {
-        const { id } = await params;
+        const { id } = params;
         const body = await request.json();
         const db = getDatabases();
+
+        const today = new Date().toISOString().split('T')[0];
+        if (body.delivery_date !== undefined && body.delivery_date > today) {
+            return NextResponse.json({ error: 'Delivery date cannot be in the future' }, { status: 400 });
+        }
 
         const updateData = {};
         if (body.customer_id !== undefined) updateData.customer_id = body.customer_id;

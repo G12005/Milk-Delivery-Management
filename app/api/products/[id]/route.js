@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 export async function PUT(request, { params }) {
     try {
-        const { id } = await params;
+        const { id } = params;
         const { company_id, name, unit, price, is_active } = await request.json();
         const db = getDatabases();
 
@@ -11,7 +11,13 @@ export async function PUT(request, { params }) {
         if (company_id !== undefined) updateData.company_id = company_id;
         if (name !== undefined) updateData.name = name;
         if (unit !== undefined) updateData.unit = unit;
-        if (price !== undefined) updateData.price = parseFloat(price);
+        if (price !== undefined) {
+            const p = parseFloat(price);
+            if (!Number.isFinite(p) || p < 0) {
+                return NextResponse.json({ error: 'Invalid price' }, { status: 400 });
+            }
+            updateData.price = p;
+        }
         if (is_active !== undefined) updateData.is_active = is_active;
 
         const doc = await db.updateDocument(

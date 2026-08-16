@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Added by code-review-graph
+.code-review-graph/
+.claude/
+.codebuddy/
+.cursorrules
+.gemini/
+.github/
+.kiro/
+.mcp.json
+.qoder/
+.vscode/
+.windsurfrules
+CODEBUDDY.md
+GEMINI.md
+QODER.md
+opencode.jsonc

@@ -8,7 +8,12 @@ export default function AgentsPage() {
     const [routes, setRoutes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editAgent, setEditAgent] = useState(null);
+    const [editForm, setEditForm] = useState({ name: '', phone: '', route_ids: [], is_active: true });
     const [form, setForm] = useState({ name: '', phone: '', route_ids: [] });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [savingAgentId, setSavingAgentId] = useState(null);
 
     const fetchData = async () => {
         try {
@@ -25,6 +30,8 @@ export default function AgentsPage() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         try {
             await fetch('/api/agents', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -34,6 +41,30 @@ export default function AgentsPage() {
             setShowModal(false);
             fetchData();
         } catch (e) { showToast('Error adding agent', 'error'); }
+        setIsSubmitting(false);
+    };
+
+    const openEdit = (a) => {
+        setEditAgent(a);
+        setEditForm({ name: a.name || '', phone: a.phone || '', route_ids: (a.assigned_routes || []).map(r => r.route_id), is_active: a.is_active !== false });
+        setShowEditModal(true);
+    };
+
+    const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!editAgent) return;
+        if (savingAgentId) return;
+        setSavingAgentId(editAgent.id);
+        try {
+            await fetch(`/api/agents/${editAgent.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(editForm),
+            });
+            showToast('Agent updated');
+            setShowEditModal(false);
+            fetchData();
+        } catch (e) { showToast('Error updating agent', 'error'); }
+        setSavingAgentId(null);
     };
 
     const toggleRoute = (routeId) => {
@@ -68,7 +99,10 @@ export default function AgentsPage() {
                                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{a.name}</h3>
                                 <p style={{ margin: '2px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>{a.phone || 'No phone'}</p>
                             </div>
-                            <span className={`badge ${a.is_active ? 'badge-success' : 'badge-danger'}`} style={{ marginLeft: 'auto' }}>{a.is_active ? 'Active' : 'Inactive'}</span>
+                            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <button className="btn-icon" onClick={() => openEdit(a)} title="Edit agent" disabled={savingAgentId === a.id}>{savingAgentId === a.id ? '⏳' : '✏️'}</button>
+                                <span className={`badge ${a.is_active ? 'badge-success' : 'badge-danger'}`}>{a.is_active ? 'Active' : 'Inactive'}</span>
+                            </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {a.assigned_routes?.length > 0 ? a.assigned_routes.map((r) => (
@@ -103,8 +137,46 @@ export default function AgentsPage() {
                         </div>
                     </div>
                     <div className="modal-actions">
-                        <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                        <button type="submit" className="btn btn-primary">Add Agent</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={isSubmitting}>Cancel</button>
+                        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Add Agent'}</button>
+                    </div>
+                </form>
+            </Modal>
+
+            <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Agent">
+                <form onSubmit={handleEditSubmit}>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>Name *</label>
+                            <input className="form-control" required value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label>Phone</label>
+                            <input className="form-control" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label>Assign Routes</label>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {routes.map((r) => (
+                                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: editForm.route_ids.includes(r.id) ? 'rgba(59,130,246,0.2)' : 'var(--background)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                    <input type="checkbox" checked={editForm.route_ids.includes(r.id)} onChange={() => setEditForm((prev) => ({ ...prev, route_ids: prev.route_ids.includes(r.id) ? prev.route_ids.filter((id) => id !== r.id) : [...prev.route_ids, r.id] }))} style={{ display: 'none' }} />
+                                    {editForm.route_ids.includes(r.id) ? '✅' : '⬜'} {r.name}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label>Active</label>
+                        <div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input type="checkbox" checked={!!editForm.is_active} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} /> Active
+                            </label>
+                        </div>
+                    </div>
+                    <div className="modal-actions">
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)} disabled={!!savingAgentId}>Cancel</button>
+                        <button type="submit" className="btn btn-primary" disabled={!!savingAgentId}>{savingAgentId ? 'Saving...' : 'Save'}</button>
                     </div>
                 </form>
             </Modal>
