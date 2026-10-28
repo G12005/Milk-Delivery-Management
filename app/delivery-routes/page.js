@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconMap } from '../components/Icons';
 
 export default function RoutesPage() {
     const [routes, setRoutes] = useState([]);
@@ -12,7 +13,8 @@ export default function RoutesPage() {
     const fetchData = async () => {
         try {
             const res = await fetch('/api/routes');
-            setRoutes(await res.json());
+            const data = await res.json();
+            setRoutes(Array.isArray(data) ? data : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -47,10 +49,10 @@ export default function RoutesPage() {
 
             <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
                 {routes.length === 0 ? (
-                    <div className="empty-state"><div className="icon">🗺️</div><h3>No routes yet</h3><p>Add your first delivery route</p></div>
+                    <div className="empty-state"><div className="icon"><IconMap size={40} /></div><h3>No routes yet</h3><p>Add your first delivery route</p></div>
                 ) : routes.map((r) => (
                     <div className="glass-card" key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', flexShrink: 0 }}>🗺️</div>
+                        <div style={{ width: 42, height: 42, borderRadius: 10, background: '#f5f3ff', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconMap size={20} /></div>
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{r.name}</h3>
                             <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>{r.area || 'No area specified'}</p>

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconBank } from '../components/Icons';
 
 export default function BankAccountsPage() {
     const [accounts, setAccounts] = useState([]);
@@ -12,7 +13,8 @@ export default function BankAccountsPage() {
     const fetchData = async () => {
         try {
             const res = await fetch('/api/bank-accounts');
-            setAccounts(await res.json());
+            const data = await res.json();
+            setAccounts(Array.isArray(data) ? data : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -46,10 +48,10 @@ export default function BankAccountsPage() {
 
             <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
                 {accounts.length === 0 ? (
-                    <div className="empty-state"><div className="icon">🏦</div><h3>No bank accounts yet</h3></div>
+                    <div className="empty-state"><div className="icon"><IconBank size={40} /></div><h3>No bank accounts yet</h3></div>
                 ) : accounts.map((a) => (
                     <div className="glass-card" key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', flexShrink: 0 }}>🏦</div>
+                        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconBank size={20} /></div>
                         <div style={{ minWidth: 0 }}>
                             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{a.bank_name}</h3>
                             <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>A/C: {a.account_number || '—'}</p>

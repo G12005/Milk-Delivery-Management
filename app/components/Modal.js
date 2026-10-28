@@ -1,4 +1,5 @@
 'use client';
+import { IconX } from './Icons';
 
 export default function Modal({ isOpen, onClose, title, children }) {
     if (!isOpen) return null;
@@ -8,7 +9,9 @@ export default function Modal({ isOpen, onClose, title, children }) {
             <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                     <h3>{title}</h3>
-                    <button className="modal-close" onClick={onClose}>✕</button>
+                    <button className="modal-close" onClick={onClose} aria-label="Close">
+                        <IconX size={18} />
+                    </button>
                 </div>
                 {children}
             </div>

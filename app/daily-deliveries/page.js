@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { showToast } from '../components/Toast';
+import { IconClipboard, IconTruck, IconCheck, IconSquare, IconCheckSquare, IconLoader, IconBarChart } from '../components/Icons';
 
 export default function DailyDeliveriesPage() {
     const [deliveries, setDeliveries] = useState([]);
@@ -22,15 +23,19 @@ export default function DailyDeliveriesPage() {
     const fetchData = async () => {
         try {
             const [custRes, prodRes, routeRes, agentRes] = await Promise.all([
-                fetch('/api/customers'),
+                fetch('/api/customers?limit=500'),
                 fetch('/api/products'),
                 fetch('/api/routes'),
                 fetch('/api/agents')
             ]);
-            setCustomers(await custRes.json());
-            setProducts(await prodRes.json());
-            setRoutes(await routeRes.json());
-            setAgents(await agentRes.json());
+            const custData = await custRes.json();
+            setCustomers(Array.isArray(custData) ? custData : (custData?.customers || []));
+            const prodData = await prodRes.json();
+            setProducts(Array.isArray(prodData) ? prodData : []);
+            const routeData = await routeRes.json();
+            setRoutes(Array.isArray(routeData) ? routeData : []);
+            const agentData = await agentRes.json();
+            setAgents(Array.isArray(agentData) ? agentData : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -62,11 +67,13 @@ export default function DailyDeliveriesPage() {
     // Assigned agent for selected route
     const selectedRouteAgent = useMemo(() => {
         if (!filterRoute) return null;
-        const assignedCustomers = customers.filter(c => String(c.route_id) === String(filterRoute));
+        const custList = Array.isArray(customers) ? customers : [];
+        const agentList = Array.isArray(agents) ? agents : [];
+        const assignedCustomers = custList.filter(c => String(c?.route_id) === String(filterRoute));
         if (assignedCustomers.length > 0 && assignedCustomers[0].agent_name) {
             return assignedCustomers[0].agent_name;
         }
-        for (const agent of agents) {
+        for (const agent of agentList) {
             if (agent.assigned_routes?.some(r => String(r.route_id) === String(filterRoute))) {
                 return agent.name;
             }
@@ -76,51 +83,57 @@ export default function DailyDeliveriesPage() {
 
     // Build list of attendance items per customer and product for the selected date & route
     const attendanceData = useMemo(() => {
+        const prodList = Array.isArray(products) ? products : [];
+        const custList = Array.isArray(customers) ? customers : [];
+        const deliveryList = Array.isArray(deliveries) ? deliveries : [];
+
         const productMap = {};
-        products.forEach(p => productMap[p.id] = p);
+        prodList.forEach(p => { if (p && p.id) productMap[p.id] = p; });
 
         // Filter customers by selected route
         const routeCustomers = filterRoute
-            ? customers.filter(c => String(c.route_id) === String(filterRoute))
-            : customers;
+            ? custList.filter(c => String(c?.route_id) === String(filterRoute))
+            : custList;
 
         const customerGroups = [];
 
         routeCustomers.forEach(cust => {
+            if (!cust) return;
             let items = [];
-            if (cust.parsed_subscriptions && cust.parsed_subscriptions.length > 0) {
-                items = cust.parsed_subscriptions;
+            if (Array.isArray(cust.parsed_subscriptions) && cust.parsed_subscriptions.length > 0) {
+                items = [...cust.parsed_subscriptions];
             } else if (cust.subscribed_product_id) {
                 items = [{ product_id: cust.subscribed_product_id, quantity: cust.subscribed_quantity || 1.0 }];
-            } else if (products.length > 0) {
-                items = [{ product_id: products[0].id, quantity: 1.0 }];
+            } else if (prodList.length > 0) {
+                items = [{ product_id: prodList[0].id, quantity: 1.0 }];
             }
 
             // include any user-added products for this customer
-            const added = addedProductsMap[cust.id] || [];
+            const added = (addedProductsMap && addedProductsMap[cust.id]) || [];
             if (added.length > 0) {
                 items = items.concat(added.map(a => ({ product_id: a.product_id, quantity: a.qty })));
             }
 
             // ensure any deliveries present in DB for this customer but not in subscription/items are included
-            const custDeliveries = deliveries.filter(d => String(d.customer_id) === String(cust.id));
-            const itemProductIds = new Set(items.map(it => String(it.product_id)));
+            const custDeliveries = deliveryList.filter(d => String(d?.customer_id) === String(cust.id));
+            const itemProductIds = new Set(items.map(it => String(it?.product_id)));
             custDeliveries.forEach(d => {
-                if (!itemProductIds.has(String(d.product_id))) {
+                if (d && !itemProductIds.has(String(d.product_id))) {
                     items.push({ product_id: d.product_id, quantity: d.quantity });
                 }
             });
 
             const rowItems = items.map(sub => {
+                if (!sub) return null;
                 const rowKey = `${cust.id}_${sub.product_id}`;
                 const prod = productMap[sub.product_id] || {};
 
                 // Check if delivery record exists in DB for date + customer + product
-                const existingDoc = deliveries.find(
-                    d => String(d.customer_id) === String(cust.id) && String(d.product_id) === String(sub.product_id)
+                const existingDoc = deliveryList.find(
+                    d => String(d?.customer_id) === String(cust.id) && String(d?.product_id) === String(sub.product_id)
                 );
 
-                const currentQty = localQtyMap[rowKey] !== undefined
+                const currentQty = (localQtyMap && localQtyMap[rowKey] !== undefined)
                     ? localQtyMap[rowKey]
                     : (existingDoc ? parseFloat(existingDoc.quantity) : (parseFloat(sub.quantity) || 1.0));
 
@@ -136,7 +149,7 @@ export default function DailyDeliveriesPage() {
                     is_verified: !!existingDoc,
                     db_id: existingDoc ? existingDoc.id : null,
                 };
-            });
+            }).filter(Boolean);
 
             customerGroups.push({
                 customer_id: cust.id,
@@ -148,7 +161,7 @@ export default function DailyDeliveriesPage() {
         });
 
         return customerGroups;
-    }, [customers, products, deliveries, filterRoute, localQtyMap]);
+    }, [customers, products, deliveries, filterRoute, localQtyMap, addedProductsMap]);
 
     // All flat rows for summary calculation
     const flatRows = useMemo(() => {
@@ -291,7 +304,7 @@ export default function DailyDeliveriesPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                     <button className="btn btn-primary" onClick={handleVerifyAll} disabled={flatRows.length === 0}>
-                        ✅ Verify All Pending ({flatRows.length - verifiedCount})
+                        ✓ Verify All Pending ({flatRows.length - verifiedCount})
                     </button>
                 </div>
             </div>
@@ -320,7 +333,7 @@ export default function DailyDeliveriesPage() {
 
                 {filterRoute && (
                     <div style={{ background: 'rgba(59,130,246,0.12)', padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(59,130,246,0.2)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>🚚 <strong>Agent:</strong> {selectedRouteAgent || 'Unassigned'}</span>
+                        <span><IconTruck size={16} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong>Agent:</strong> {selectedRouteAgent || 'Unassigned'}</span>
                     </div>
                 )}
 
@@ -347,7 +360,7 @@ export default function DailyDeliveriesPage() {
                             <tr>
                                 <td colSpan={4}>
                                     <div className="empty-state">
-                                        <div className="icon">📋</div>
+                                        <div className="icon"><IconClipboard size={40} /></div>
                                         <h3>No customers found for this route</h3>
                                         <p>Select another route or add customers to get started</p>
                                     </div>
@@ -434,11 +447,11 @@ export default function DailyDeliveriesPage() {
                                                 }}
                                             >
                                                 {savingRowKey === row.rowKey ? (
-                                                    '⏳ Saving...'
+                                                    <><IconLoader size={14} /> Saving...</>
                                                 ) : row.is_verified ? (
-                                                    '✅ Verified'
+                                                    <><IconCheckSquare size={14} /> Verified</>
                                                 ) : (
-                                                    '⬜ Verify'
+                                                    <><IconSquare size={14} /> Verify</>
                                                 )}
                                             </button>
                                         </td>
@@ -454,7 +467,7 @@ export default function DailyDeliveriesPage() {
             {Object.keys(productSummary).length > 0 && (
                 <div style={{ marginTop: 24, padding: 18, background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)' }}>
                     <h3 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        📊 Route Product Quantities Summary
+                        <IconBarChart size={18} /> Route Product Quantities Summary
                     </h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                         {Object.entries(productSummary).map(([pName, info]) => (

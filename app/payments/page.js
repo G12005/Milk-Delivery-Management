@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconCreditCard } from '../components/Icons';
 
 export default function PaymentsPage() {
     const [payments, setPayments] = useState([]);
@@ -18,13 +19,17 @@ export default function PaymentsPage() {
     const fetchData = async () => {
         try {
             const [payRes, custRes, billRes, bankRes] = await Promise.all([
-                fetch('/api/payments'), fetch('/api/customers'),
+                fetch('/api/payments'), fetch('/api/customers?limit=500'),
                 fetch('/api/bills?status=pending'), fetch('/api/bank-accounts'),
             ]);
-            setPayments(await payRes.json());
-            setCustomers(await custRes.json());
-            setBills(await billRes.json());
-            setBankAccounts(await bankRes.json());
+            const payData = await payRes.json();
+            setPayments(Array.isArray(payData) ? payData : []);
+            const custData = await custRes.json();
+            setCustomers(Array.isArray(custData) ? custData : (custData?.customers || []));
+            const billData = await billRes.json();
+            setBills(Array.isArray(billData) ? billData : []);
+            const bankData = await bankRes.json();
+            setBankAccounts(Array.isArray(bankData) ? bankData : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -97,7 +102,7 @@ export default function PaymentsPage() {
                     </thead>
                     <tbody>
                         {payments.length === 0 ? (
-                            <tr><td colSpan={8}><div className="empty-state"><div className="icon">💳</div><h3>No payments recorded</h3></div></td></tr>
+                            <tr><td colSpan={8}><div className="empty-state"><div className="icon"><IconCreditCard size={40} /></div><h3>No payments recorded</h3></div></td></tr>
                         ) : payments.map((p) => (
                             <tr key={p.id}>
                                 <td>{p.payment_date}</td>

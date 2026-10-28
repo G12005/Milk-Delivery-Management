@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconMilk, IconEdit, IconTrash } from '../components/Icons';
 
 export default function ProductsPage() {
     const [products, setProducts] = useState([]);
@@ -19,8 +20,10 @@ export default function ProductsPage() {
             const [prodRes, compRes] = await Promise.all([
                 fetch('/api/products'), fetch('/api/companies'),
             ]);
-            setProducts(await prodRes.json());
-            setCompanies(await compRes.json());
+            const prodData = await prodRes.json();
+            setProducts(Array.isArray(prodData) ? prodData : []);
+            const compData = await compRes.json();
+            setCompanies(Array.isArray(compData) ? compData : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -105,7 +108,7 @@ export default function ProductsPage() {
                     </thead>
                     <tbody>
                         {filtered.length === 0 ? (
-                            <tr><td colSpan={6}><div className="empty-state"><div className="icon">🥛</div><h3>No products found</h3></div></td></tr>
+                            <tr><td colSpan={6}><div className="empty-state"><div className="icon"><IconMilk size={40} /></div><h3>No products found</h3></div></td></tr>
                         ) : filtered.map((p) => (
                             <tr key={p.id}>
                                 <td style={{ fontWeight: 600 }}>{p.name}</td>
@@ -114,8 +117,8 @@ export default function ProductsPage() {
                                 <td>₹{parseFloat(p.price).toFixed(2)}</td>
                                 <td><span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? 'Active' : 'Inactive'}</span></td>
                                 <td>
-                                    <button className="btn-icon" onClick={() => openEdit(p)} title="Edit price">✏️</button>
-                                    <button className="btn-icon" onClick={() => handleDelete(p.id)} title="Delete">🗑️</button>
+                                    <button className="btn-icon" onClick={() => openEdit(p)} title="Edit price"><IconEdit size={14} /></button>
+                                    <button className="btn-icon" onClick={() => handleDelete(p.id)} title="Delete"><IconTrash size={14} /></button>
                                 </td>
                             </tr>
                         ))}

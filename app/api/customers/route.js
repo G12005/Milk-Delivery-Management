@@ -23,11 +23,27 @@ export async function GET(request) {
         const productMap = {};
         productsRes.documents.forEach(p => productMap[p.$id] = p);
 
-        const queries = [Query.orderAsc('name'), Query.limit(100)];
+        const hasPaging = searchParams.has('page') || (searchParams.has('limit') && searchParams.get('all') !== 'true');
+        const page = Number(searchParams.get('page') || '1');
+        const limit = Number(searchParams.get('limit') || (hasPaging ? '20' : '500'));
+        const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+        const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : (hasPaging ? 20 : 500);
+        const offset = hasPaging ? (safePage - 1) * safeLimit : 0;
+
+        const queries = [
+            Query.orderAsc('route_id'),
+            Query.orderAsc('display_order'),
+            Query.orderAsc('name'),
+            Query.orderAsc('$createdAt'),
+            Query.orderAsc('$id')
+        ];
         if (routeId) queries.push(Query.equal('route_id', routeId));
         if (agentId) queries.push(Query.equal('agent_id', agentId));
+        queries.push(Query.limit(safeLimit), Query.offset(offset));
 
         const customersRes = await db.listDocuments(DATABASE_ID, COLLECTIONS.CUSTOMERS, queries);
+
+        const totalCustomers = customersRes.total ?? customersRes.documents.length;
 
         const customers = customersRes.documents.map(c => {
             let parsedSubs = [];
@@ -53,11 +69,22 @@ export async function GET(request) {
             return {
                 id: c.$id,
                 ...c,
+                display_order: c.display_order ?? 0,
                 parsed_subscriptions: parsedSubs,
                 route_name: routeMap[c.route_id] || '',
                 agent_name: agentMap[c.agent_id] || ''
             };
         });
+
+        if (hasPaging) {
+            return NextResponse.json({
+                customers,
+                total: totalCustomers,
+                page: safePage,
+                limit: safeLimit,
+                totalPages: Math.max(1, Math.ceil(totalCustomers / safeLimit))
+            });
+        }
 
         return NextResponse.json(customers);
     } catch (error) {
@@ -71,6 +98,19 @@ export async function POST(request) {
         const db = getDatabases();
 
         const subsString = subscriptions ? (typeof subscriptions === 'string' ? subscriptions : JSON.stringify(subscriptions)) : '[]';
+
+        let displayOrder = 1000;
+        if (route_id) {
+            const routeCustomers = await db.listDocuments(DATABASE_ID, COLLECTIONS.CUSTOMERS, [
+                Query.equal('route_id', route_id),
+                Query.orderDesc('display_order'),
+                Query.limit(1)
+            ]);
+            if (routeCustomers.documents.length > 0) {
+                const lastOrder = Number(routeCustomers.documents[0].display_order || 0);
+                displayOrder = Number.isFinite(lastOrder) ? lastOrder + 100 : 1000;
+            }
+        }
 
         const doc = await db.createDocument(
             DATABASE_ID,
@@ -87,6 +127,7 @@ export async function POST(request) {
                 subscriptions: subsString,
                 subscribed_product_id: subscribed_product_id || null,
                 subscribed_quantity: subscribed_quantity ? parseFloat(subscribed_quantity) : 1.0,
+                display_order: displayOrder,
                 is_active: true
             }
         );

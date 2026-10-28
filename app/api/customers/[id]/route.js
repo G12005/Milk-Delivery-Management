@@ -15,6 +15,7 @@ async function handleUpdate(request, params) {
         if (body.agent_id !== undefined) updateData.agent_id = body.agent_id;
         if (body.billing_cycle !== undefined) updateData.billing_cycle = body.billing_cycle;
         if (body.payment_type !== undefined) updateData.payment_type = body.payment_type;
+        if (body.display_order !== undefined) updateData.display_order = Number(body.display_order);
         if (body.subscriptions !== undefined) updateData.subscriptions = typeof body.subscriptions === 'string' ? body.subscriptions : JSON.stringify(body.subscriptions);
         if (body.subscribed_product_id !== undefined) updateData.subscribed_product_id = body.subscribed_product_id;
         if (body.subscribed_quantity !== undefined) updateData.subscribed_quantity = parseFloat(body.subscribed_quantity);

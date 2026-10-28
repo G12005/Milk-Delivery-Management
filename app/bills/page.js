@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconReceipt, IconZap, IconEye, IconTrash } from '../components/Icons';
 
 export default function BillsPage() {
     const [bills, setBills] = useState([]);
@@ -17,14 +18,16 @@ export default function BillsPage() {
             let url = '/api/bills?';
             if (filterStatus) url += `status=${filterStatus}&`;
             const res = await fetch(url);
-            setBills(await res.json());
+            const data = await res.json();
+            setBills(Array.isArray(data) ? data : []);
         } catch (e) { console.error(e); }
     };
 
     const fetchCustomers = async () => {
         try {
-            const res = await fetch('/api/customers');
-            setCustomers(await res.json());
+            const res = await fetch('/api/customers?limit=500');
+            const data = await res.json();
+            setCustomers(Array.isArray(data) ? data : (data?.customers || []));
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -107,7 +110,7 @@ export default function BillsPage() {
                     <h2>Bills</h2>
                     <p>Generate &amp; manage customer bills</p>
                 </div>
-                <button className="btn btn-success" onClick={() => { setGenForm({ customer_id: '', period_start: '', period_end: '' }); setShowGenerate(true); }}>⚡ Generate Bill</button>
+                <button className="btn btn-success" onClick={() => { setGenForm({ customer_id: '', period_start: '', period_end: '' }); setShowGenerate(true); }}><IconZap size={14} /> Generate Bill</button>
             </div>
 
             <div className="filters-bar">
@@ -137,7 +140,7 @@ export default function BillsPage() {
                     </thead>
                     <tbody>
                         {bills.length === 0 ? (
-                            <tr><td colSpan={10}><div className="empty-state"><div className="icon">🧾</div><h3>No bills found</h3></div></td></tr>
+                            <tr><td colSpan={10}><div className="empty-state"><div className="icon"><IconReceipt size={40} /></div><h3>No bills found</h3></div></td></tr>
                         ) : bills.map((b) => (
                             <tr key={b.id}>
                                 <td style={{ fontWeight: 600 }}>#{b.id}</td>
@@ -153,8 +156,8 @@ export default function BillsPage() {
                                 <td>{statusBadge(b.status)}</td>
                                 <td>
                                     <div style={{ display: 'flex', gap: 6 }}>
-                                        <button className="btn-icon" onClick={() => viewBill(b.id)} title="View Details">👁️</button>
-                                        <button className="btn-icon" onClick={() => deleteBill(b.id)} title="Delete">🗑️</button>
+                                        <button className="btn-icon" onClick={() => viewBill(b.id)} title="View Details"><IconEye size={14} /></button>
+                                        <button className="btn-icon" onClick={() => deleteBill(b.id)} title="Delete"><IconTrash size={14} /></button>
                                     </div>
                                 </td>
                             </tr>
@@ -185,7 +188,7 @@ export default function BillsPage() {
                     </div>
                     <div className="modal-actions">
                         <button type="button" className="btn btn-secondary" onClick={() => setShowGenerate(false)}>Cancel</button>
-                        <button type="submit" className="btn btn-success">⚡ Generate</button>
+                        <button type="submit" className="btn btn-success"><IconZap size={14} /> Generate</button>
                     </div>
                 </form>
             </Modal>

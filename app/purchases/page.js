@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconPackage } from '../components/Icons';
 
 export default function PurchasesPage() {
     const [purchases, setPurchases] = useState([]);
@@ -17,7 +18,8 @@ export default function PurchasesPage() {
             let url = '/api/purchases?';
             if (filterDate) url += `date=${filterDate}&`;
             const res = await fetch(url);
-            setPurchases(await res.json());
+            const data = await res.json();
+            setPurchases(Array.isArray(data) ? data : []);
         } catch (e) { console.error(e); }
     };
 
@@ -26,8 +28,10 @@ export default function PurchasesPage() {
             const [wsRes, prodRes] = await Promise.all([
                 fetch('/api/wholesalers'), fetch('/api/products'),
             ]);
-            setWholesalers(await wsRes.json());
-            setProducts(await prodRes.json());
+            const wsData = await wsRes.json();
+            setWholesalers(Array.isArray(wsData) ? wsData : []);
+            const prodData = await prodRes.json();
+            setProducts(Array.isArray(prodData) ? prodData : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -86,7 +90,7 @@ export default function PurchasesPage() {
                     </thead>
                     <tbody>
                         {purchases.length === 0 ? (
-                            <tr><td colSpan={6}><div className="empty-state"><div className="icon">📦</div><h3>No purchases for this date</h3></div></td></tr>
+                            <tr><td colSpan={6}><div className="empty-state"><div className="icon"><IconPackage size={40} /></div><h3>No purchases for this date</h3></div></td></tr>
                         ) : purchases.map((p) => (
                             <tr key={p.id}>
                                 <td style={{ fontWeight: 600 }}>{p.wholesaler_name}</td>

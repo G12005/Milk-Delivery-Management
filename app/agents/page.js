@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconTruck, IconEdit, IconCheck, IconSquare, IconCheckSquare } from '../components/Icons';
 
 export default function AgentsPage() {
     const [agents, setAgents] = useState([]);
@@ -20,8 +21,10 @@ export default function AgentsPage() {
             const [agentRes, routeRes] = await Promise.all([
                 fetch('/api/agents'), fetch('/api/routes'),
             ]);
-            setAgents(await agentRes.json());
-            setRoutes(await routeRes.json());
+            const agentData = await agentRes.json();
+            setAgents(Array.isArray(agentData) ? agentData : []);
+            const routeData = await routeRes.json();
+            setRoutes(Array.isArray(routeData) ? routeData : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -90,17 +93,17 @@ export default function AgentsPage() {
 
             <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
                 {agents.length === 0 ? (
-                    <div className="empty-state"><div className="icon">🚚</div><h3>No agents yet</h3></div>
+                    <div className="empty-state"><div className="icon"><IconTruck size={40} /></div><h3>No agents yet</h3></div>
                 ) : agents.map((a) => (
                     <div className="glass-card" key={a.id}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-                            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', flexShrink: 0 }}>🚚</div>
+                            <div style={{ width: 42, height: 42, borderRadius: 10, background: '#fffbeb', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconTruck size={20} /></div>
                             <div>
                                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{a.name}</h3>
                                 <p style={{ margin: '2px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>{a.phone || 'No phone'}</p>
                             </div>
                             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-                                <button className="btn-icon" onClick={() => openEdit(a)} title="Edit agent" disabled={savingAgentId === a.id}>{savingAgentId === a.id ? '⏳' : '✏️'}</button>
+                                <button className="btn-icon" onClick={() => openEdit(a)} title="Edit agent" disabled={savingAgentId === a.id}><IconEdit size={14} /></button>
                                 <span className={`badge ${a.is_active ? 'badge-success' : 'badge-danger'}`}>{a.is_active ? 'Active' : 'Inactive'}</span>
                             </div>
                         </div>
@@ -129,9 +132,9 @@ export default function AgentsPage() {
                         <label>Assign Routes</label>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             {routes.map((r) => (
-                                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: form.route_ids.includes(r.id) ? 'rgba(59,130,246,0.2)' : 'var(--background)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: form.route_ids.includes(r.id) ? '#eff6ff' : '#f9fafb', border: `1px solid ${form.route_ids.includes(r.id) ? '#bfdbfe' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.85rem', color: form.route_ids.includes(r.id) ? '#2563eb' : 'var(--foreground)' }}>
                                     <input type="checkbox" checked={form.route_ids.includes(r.id)} onChange={() => toggleRoute(r.id)} style={{ display: 'none' }} />
-                                    {form.route_ids.includes(r.id) ? '✅' : '⬜'} {r.name}
+                                    {form.route_ids.includes(r.id) ? <IconCheckSquare size={14} /> : <IconSquare size={14} />} {r.name}
                                 </label>
                             ))}
                         </div>
@@ -159,9 +162,9 @@ export default function AgentsPage() {
                         <label>Assign Routes</label>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             {routes.map((r) => (
-                                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: editForm.route_ids.includes(r.id) ? 'rgba(59,130,246,0.2)' : 'var(--background)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: editForm.route_ids.includes(r.id) ? '#eff6ff' : '#f9fafb', border: `1px solid ${editForm.route_ids.includes(r.id) ? '#bfdbfe' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.85rem', color: editForm.route_ids.includes(r.id) ? '#2563eb' : 'var(--foreground)' }}>
                                     <input type="checkbox" checked={editForm.route_ids.includes(r.id)} onChange={() => setEditForm((prev) => ({ ...prev, route_ids: prev.route_ids.includes(r.id) ? prev.route_ids.filter((id) => id !== r.id) : [...prev.route_ids, r.id] }))} style={{ display: 'none' }} />
-                                    {editForm.route_ids.includes(r.id) ? '✅' : '⬜'} {r.name}
+                                    {editForm.route_ids.includes(r.id) ? <IconCheckSquare size={14} /> : <IconSquare size={14} />} {r.name}
                                 </label>
                             ))}
                         </div>

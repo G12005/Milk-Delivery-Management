@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
+import { IconFactory } from '../components/Icons';
 
 export default function WholesalersPage() {
     const [wholesalers, setWholesalers] = useState([]);
@@ -12,7 +13,8 @@ export default function WholesalersPage() {
     const fetchData = async () => {
         try {
             const res = await fetch('/api/wholesalers');
-            setWholesalers(await res.json());
+            const data = await res.json();
+            setWholesalers(Array.isArray(data) ? data : []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -46,10 +48,10 @@ export default function WholesalersPage() {
 
             <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
                 {wholesalers.length === 0 ? (
-                    <div className="empty-state"><div className="icon">🏭</div><h3>No wholesalers yet</h3></div>
+                    <div className="empty-state"><div className="icon"><IconFactory size={40} /></div><h3>No wholesalers yet</h3></div>
                 ) : wholesalers.map((w) => (
                     <div className="glass-card" key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', flexShrink: 0 }}>🏭</div>
+                        <div style={{ width: 42, height: 42, borderRadius: 10, background: '#ecfdf5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconFactory size={20} /></div>
                         <div style={{ minWidth: 0 }}>
                             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{w.name}</h3>
                             <p style={{ margin: '2px 0', fontSize: '0.85rem', color: 'var(--muted)' }}>{w.phone || 'No phone'}</p>
