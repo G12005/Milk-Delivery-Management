@@ -95,6 +95,7 @@ const schema = [
             { key: 'name', type: 'string', size: 150, required: true },
             { key: 'phone', type: 'string', size: 15, required: false, default: '' },
             { key: 'address', type: 'string', size: 500, required: false, default: '' },
+            { key: 'display_order', type: 'integer', required: false, default: 0 },
             { key: 'route_id', type: 'string', size: 36, required: false, default: null },
             { key: 'agent_id', type: 'string', size: 36, required: false, default: null },
             { key: 'billing_cycle', type: 'enum', elements: ['1-to-last', '11-to-10', 'daily'], required: false, default: '1-to-last' },
@@ -193,6 +194,8 @@ async function createAttribute(colId, attr) {
             await databases.createBooleanAttribute(dbId, colId, attr.key, attr.required, defaultValue);
         } else if (attr.type === 'float') {
             await databases.createFloatAttribute(dbId, colId, attr.key, attr.required, undefined, undefined, defaultValue);
+        } else if (attr.type === 'integer') {
+            await databases.createIntegerAttribute(dbId, colId, attr.key, attr.required, undefined, undefined, defaultValue);
         } else if (attr.type === 'enum') {
             await databases.createEnumAttribute(dbId, colId, attr.key, attr.elements, attr.required, defaultValue);
         }

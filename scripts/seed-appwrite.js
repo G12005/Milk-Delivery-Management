@@ -1,17 +1,18 @@
 /**
- * Seeding script to populate Appwrite Database with dummy/sample data.
- * Run using: node scripts/seed-appwrite.js
+ * Import customers and their subscriptions from a CSV or TSV file into Appwrite.
+ * Run with: node scripts/seed-appwrite.js [path-to-customer-file]
+ * Set APPWRITE_CUSTOMERS_FILE to override the default Downloads file path.
  */
 
-const { Client, Databases, ID } = require('node-appwrite');
+const { Client, Databases, ID, Query } = require('node-appwrite');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-// Manually load .env.local variables if present
 const envPath = path.join(process.cwd(), '.env.local');
 if (fs.existsSync(envPath)) {
     const envContent = fs.readFileSync(envPath, 'utf8');
-    envContent.split('\n').forEach(line => {
+    envContent.split(/\r?\n/).forEach(line => {
         const trimmed = line.trim();
         if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
             const [key, ...vals] = trimmed.split('=');
@@ -27,12 +28,14 @@ const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.app
 const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
 const apiKey = process.env.APPWRITE_API_KEY;
 const dbId = process.env.APPWRITE_DATABASE_ID || 'milk_delivery';
+const defaultTsvPath = path.join(os.homedir(), 'Downloads', 'DETAILS OF CUSTOMER WITH QTY - Sheet1.tsv');
+const defaultCsvPath = path.join(os.homedir(), 'Downloads', 'DETAILS OF CUSTOMER WITH QTY - Sheet1.csv');
+const customerFile = process.argv[2] || process.env.APPWRITE_CUSTOMERS_FILE ||
+    (fs.existsSync(defaultTsvPath) ? defaultTsvPath : defaultCsvPath);
 
 if (!projectId || projectId === 'your_project_id_here' || !apiKey || apiKey === 'your_server_api_key_here') {
-    console.error('\n❌ ERROR: Appwrite credentials missing!');
-    console.error('Please open .env.local and set:');
-    console.error('  NEXT_PUBLIC_APPWRITE_PROJECT_ID=<your-project-id>');
-    console.error('  APPWRITE_API_KEY=<your-api-key>\n');
+    console.error('\nERROR: Appwrite credentials are missing or still use placeholders.');
+    console.error('Set NEXT_PUBLIC_APPWRITE_PROJECT_ID and APPWRITE_API_KEY in .env.local.\n');
     process.exit(1);
 }
 
@@ -43,184 +46,270 @@ const client = new Client()
 
 const db = new Databases(client);
 
-async function seed() {
-    console.log('🌱 Starting Appwrite Seed Script...\n');
+const products = [
+    { column: 'GOLD', name: 'Gold', price: 35 },
+    { column: 'Shakti', name: 'Shakti', price: 32 },
+    { column: 'DTM', name: 'DTM', price: 26 },
+    { column: 'DTM (160 ml)', name: 'DTM (160 ml)', price: 10 },
+    { column: 'Cow', name: 'Cow', price: 31 },
+    { column: 'Chai', name: 'Chai', price: 30 },
+    { column: 'Taza', name: 'Taza', price: 29 },
+    { column: 'A2', name: 'A2', price: 38 },
+];
 
-    // 1. Companies
-    console.log('Inserting Companies...');
-    const companiesData = ['Amul', 'Sanchi', 'MotherDairy'];
-    const companyDocs = {};
-    for (const name of companiesData) {
-        const doc = await db.createDocument(dbId, 'companies', ID.unique(), { name, is_active: true });
-        companyDocs[name] = doc.$id;
+const expectedProductColumns = products.map(product => product.column);
+const companyName = 'All_Milk';
+const batchSize = 100;
+
+function parseDelimited(text, delimiter) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let quoted = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+
+        if (quoted) {
+            if (char === '"' && text[i + 1] === '"') {
+                field += '"';
+                i++;
+            } else if (char === '"') {
+                quoted = false;
+            } else {
+                field += char;
+            }
+        } else if (char === '"' && field.length === 0) {
+            quoted = true;
+        } else if (char === delimiter) {
+            row.push(field);
+            field = '';
+        } else if (char === '\n' || char === '\r') {
+            if (char === '\r' && text[i + 1] === '\n') i++;
+            row.push(field);
+            if (row.some(value => value.trim())) rows.push(row);
+            row = [];
+            field = '';
+        } else {
+            field += char;
+        }
     }
-    console.log(`✓ Inserted ${companiesData.length} companies.`);
 
-    // 2. Products
-    console.log('Inserting Products...');
-    const productsData = [
-        { company: 'Amul', name: 'Amul Gold Milk 500ml', unit: 'packet', price: 32.00 },
-        { company: 'Amul', name: 'Amul Taaza Milk 500ml', unit: 'packet', price: 25.00 },
-        { company: 'Amul', name: 'Amul Gold Milk 1L', unit: 'packet', price: 62.00 },
-        { company: 'Sanchi', name: 'Sanchi Full Cream Milk 500ml', unit: 'packet', price: 30.00 },
-        { company: 'Sanchi', name: 'Sanchi Toned Milk 500ml', unit: 'packet', price: 24.00 },
-        { company: 'MotherDairy', name: 'MotherDairy Full Cream 500ml', unit: 'packet', price: 31.00 },
-        { company: 'MotherDairy', name: 'MotherDairy Dahi 400g', unit: 'packet', price: 35.00 },
-    ];
-    const productDocs = [];
-    for (const item of productsData) {
-        const doc = await db.createDocument(dbId, 'products', ID.unique(), {
-            company_id: companyDocs[item.company],
-            name: item.name,
-            unit: item.unit,
-            price: item.price,
-            is_active: true
-        });
-        productDocs.push(doc);
+    if (quoted) {
+        throw new Error('Customer file contains an unterminated quoted field.');
     }
-    console.log(`✓ Inserted ${productDocs.length} products.`);
 
-    // 3. Routes
-    console.log('Inserting Routes...');
-    const routesData = [
-        { name: 'Route A', area: 'Sector 1-5, Main Market' },
-        { name: 'Route B', area: 'Sector 6-10, Old City' },
-        { name: 'Route C', area: 'Sector 11-15, New Colony' },
-        { name: 'Route D', area: 'Sector 16-20, Industrial Area' }
-    ];
-    const routeDocs = [];
-    for (const r of routesData) {
-        const doc = await db.createDocument(dbId, 'routes', ID.unique(), r);
-        routeDocs.push(doc);
+    if (field.length > 0 || row.length > 0) {
+        row.push(field);
+        if (row.some(value => value.trim())) rows.push(row);
     }
-    console.log(`✓ Inserted ${routeDocs.length} routes.`);
 
-    // 4. Delivery Agents
-    console.log('Inserting Delivery Agents...');
-    const agentsData = [
-        { name: 'Ramesh Kumar', phone: '9876543210' },
-        { name: 'Suresh Yadav', phone: '9876543211' },
-        { name: 'Manoj Singh', phone: '9876543212' }
-    ];
-    const agentDocs = [];
-    for (const a of agentsData) {
-        const doc = await db.createDocument(dbId, 'delivery_agents', ID.unique(), { ...a, is_active: true });
-        agentDocs.push(doc);
-    }
-    console.log(`✓ Inserted ${agentDocs.length} delivery agents.`);
-
-    // 5. Agent-Route Assignments
-    console.log('Assigning Agents to Routes...');
-    await db.createDocument(dbId, 'agent_routes', ID.unique(), { agent_id: agentDocs[0].$id, route_id: routeDocs[0].$id });
-    await db.createDocument(dbId, 'agent_routes', ID.unique(), { agent_id: agentDocs[0].$id, route_id: routeDocs[1].$id });
-    await db.createDocument(dbId, 'agent_routes', ID.unique(), { agent_id: agentDocs[1].$id, route_id: routeDocs[2].$id });
-    await db.createDocument(dbId, 'agent_routes', ID.unique(), { agent_id: agentDocs[2].$id, route_id: routeDocs[3].$id });
-    console.log(`✓ Assigned routes.`);
-
-    // 6. Bank Accounts
-    console.log('Inserting Bank Accounts...');
-    const bankData = [
-        { bank_name: 'State Bank of India', account_number: '1234567890', ifsc: 'SBIN0001234' },
-        { bank_name: 'HDFC Bank', account_number: '9876543210', ifsc: 'HDFC0005678' },
-    ];
-    const bankDocs = [];
-    for (const b of bankData) {
-        const doc = await db.createDocument(dbId, 'bank_accounts', ID.unique(), { ...b, is_active: true });
-        bankDocs.push(doc);
-    }
-    console.log(`✓ Inserted ${bankDocs.length} bank accounts.`);
-
-    // 7. Customers
-    console.log('Inserting Customers...');
-    const customersData = [
-        { name: 'Rajesh Sharma', phone: '9001234567', address: '12, Sector 2, Main Road', route_id: routeDocs[0].$id, agent_id: agentDocs[0].$id, billing_cycle: '1-to-last', payment_type: 'postpaid' },
-        { name: 'Priya Patel', phone: '9001234568', address: '45, Sector 3, Lane 4', route_id: routeDocs[0].$id, agent_id: agentDocs[0].$id, billing_cycle: '1-to-last', payment_type: 'postpaid' },
-        { name: 'Amit Gupta', phone: '9001234569', address: '78, Sector 7, Block B', route_id: routeDocs[1].$id, agent_id: agentDocs[0].$id, billing_cycle: '11-to-10', payment_type: 'postpaid' },
-        { name: 'Sunita Verma', phone: '9001234570', address: '23, Sector 8, Market Road', route_id: routeDocs[1].$id, agent_id: agentDocs[1].$id, billing_cycle: '11-to-10', payment_type: 'prepaid' },
-        { name: 'Vikram Joshi', phone: '9001234571', address: '56, Sector 12, Colony', route_id: routeDocs[2].$id, agent_id: agentDocs[1].$id, billing_cycle: '1-to-last', payment_type: 'postpaid' },
-    ];
-    const customerDocs = [];
-    for (const c of customersData) {
-        const doc = await db.createDocument(dbId, 'customers', ID.unique(), { ...c, is_active: true });
-        customerDocs.push(doc);
-    }
-    console.log(`✓ Inserted ${customerDocs.length} customers.`);
-
-    // 8. Wholesalers
-    console.log('Inserting Wholesalers...');
-    const wholesalersData = [
-        { name: 'Sharma Distributors', phone: '9112233440', address: '15, Wholesale Market, Ring Road' },
-        { name: 'Gupta Dairy Supplies', phone: '9112233441', address: '22, Dairy Complex, Station Road' },
-    ];
-    const wholesalerDocs = [];
-    for (const w of wholesalersData) {
-        const doc = await db.createDocument(dbId, 'wholesalers', ID.unique(), w);
-        wholesalerDocs.push(doc);
-    }
-    console.log(`✓ Inserted ${wholesalerDocs.length} wholesalers.`);
-
-    // 9. Purchase Entries
-    console.log('Inserting Purchase Entries (Stock)...');
-    const todayStr = new Date().toISOString().split('T')[0];
-    for (let i = 0; i < 3; i++) {
-        await db.createDocument(dbId, 'purchase_entries', ID.unique(), {
-            wholesaler_id: wholesalerDocs[0].$id,
-            product_id: productDocs[i].$id,
-            purchase_date: todayStr,
-            quantity: 100,
-            cost_price: productDocs[i].price - 3
-        });
-    }
-    console.log(`✓ Inserted purchase entries.`);
-
-    // 10. Daily Deliveries
-    console.log('Inserting Daily Deliveries...');
-    for (const cust of customerDocs) {
-        await db.createDocument(dbId, 'daily_deliveries', ID.unique(), {
-            customer_id: cust.$id,
-            product_id: productDocs[0].$id,
-            delivery_date: todayStr,
-            quantity: 2,
-            rate: productDocs[0].price
-        });
-    }
-    console.log(`✓ Inserted daily deliveries for today.`);
-
-    // 11. Bills & Bill Items
-    console.log('Inserting Sample Bills...');
-    const billDoc = await db.createDocument(dbId, 'bills', ID.unique(), {
-        customer_id: customerDocs[0].$id,
-        period_start: '2026-07-01',
-        period_end: '2026-07-31',
-        total_amount: 1920.00,
-        paid_amount: 1000.00,
-        status: 'partial'
-    });
-
-    await db.createDocument(dbId, 'bill_items', ID.unique(), {
-        bill_id: billDoc.$id,
-        product_id: productDocs[0].$id,
-        total_qty: 60,
-        rate: 32.00,
-        amount: 1920.00
-    });
-
-    // 12. Payments
-    console.log('Inserting Sample Payment...');
-    await db.createDocument(dbId, 'payments', ID.unique(), {
-        bill_id: billDoc.$id,
-        customer_id: customerDocs[0].$id,
-        amount: 1000.00,
-        mode: 'upi',
-        bank_account_id: bankDocs[0].$id,
-        payment_date: todayStr,
-        notes: 'Advance payment via GPay'
-    });
-    console.log(`✓ Inserted sample bill and payment.`);
-
-    console.log('\n🎉 Appwrite Dummy Data Seeded Successfully!');
+    return rows;
 }
 
-seed().catch(err => {
-    console.error('Seeding failed:', err);
-});
+function readCustomers(filePath) {
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Customer file not found: ${filePath}`);
+    }
+
+    const delimiter = path.extname(filePath).toLowerCase() === '.csv' ? ',' : '\t';
+    const rows = parseDelimited(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''), delimiter);
+    const firstHeader = rows[0] || [];
+    const productHeader = rows[1] || [];
+
+    if (firstHeader[0]?.trim() !== 'Display Order' || firstHeader[1]?.trim() !== 'NAME OF CUSTOMER') {
+        throw new Error('Customer file must start with Display Order and NAME OF CUSTOMER columns.');
+    }
+
+    expectedProductColumns.forEach((name, index) => {
+        if (productHeader[index + 2]?.trim() !== name) {
+            throw new Error(`Expected product column "${name}" at column ${index + 3}.`);
+        }
+    });
+
+    const customers = [];
+    const seenOrders = new Set();
+    const seenNames = new Set();
+    const agentNames = new Set();
+
+    for (const [index, row] of rows.slice(2).entries()) {
+        if (row.length !== 11) {
+            throw new Error(`Row ${index + 3} has ${row.length} columns; expected 11.`);
+        }
+
+        const displayOrder = Number(row[0].trim());
+        const name = row[1].trim().replace(/\s+/g, ' ');
+        const agentName = row[10].trim().replace(/\s+/g, ' ').toUpperCase();
+
+        if (!Number.isSafeInteger(displayOrder) || displayOrder < 1) {
+            throw new Error(`Row ${index + 3} has an invalid display order.`);
+        }
+        if (!name) {
+            throw new Error(`Row ${index + 3} has no customer name.`);
+        }
+        if (!agentName) {
+            throw new Error(`Row ${index + 3} has no delivery person.`);
+        }
+        if (seenOrders.has(displayOrder)) {
+            throw new Error(`Duplicate display order ${displayOrder}.`);
+        }
+        if (seenNames.has(name.toLocaleLowerCase())) {
+            throw new Error(`Duplicate customer name "${name}".`);
+        }
+
+        seenOrders.add(displayOrder);
+        seenNames.add(name.toLocaleLowerCase());
+        agentNames.add(agentName);
+
+        const subscriptions = [];
+        products.forEach((product, productIndex) => {
+            const rawQuantity = row[productIndex + 2].trim();
+            if (!rawQuantity) return;
+
+            const quantity = Number(rawQuantity);
+            if (!Number.isFinite(quantity) || quantity <= 0) {
+                throw new Error(`Row ${index + 3} has an invalid quantity for "${product.column}".`);
+            }
+
+            subscriptions.push({ productName: product.name, quantity });
+        });
+
+        customers.push({ displayOrder, name, agentName, subscriptions });
+    }
+
+    if (customers.length === 0) {
+        throw new Error('Customer file contains no customer rows.');
+    }
+
+    return { customers, agentNames };
+}
+
+async function listAllDocuments(collectionId) {
+    const documents = [];
+    let offset = 0;
+    let total = 0;
+
+    do {
+        const result = await db.listDocuments(dbId, collectionId, [
+            Query.limit(batchSize),
+            Query.offset(offset),
+        ]);
+        documents.push(...result.documents);
+        total = result.total;
+        offset += result.documents.length;
+    } while (offset < total);
+
+    return documents;
+}
+
+async function createOrUpdateByName(collectionId, name, data, existingByName) {
+    const existing = existingByName.get(name.toLocaleLowerCase());
+    if (existing) {
+        return db.updateDocument(dbId, collectionId, existing.$id, data);
+    }
+
+    const created = await db.createDocument(dbId, collectionId, ID.unique(), data);
+    existingByName.set(name.toLocaleLowerCase(), created);
+    return created;
+}
+
+async function seed() {
+    const { customers, agentNames } = readCustomers(customerFile);
+    console.log(`Read ${customers.length} customers from ${customerFile}.`);
+
+    const companies = await listAllDocuments('companies');
+    const company = await createOrUpdateByName(
+        'companies',
+        companyName,
+        { name: companyName, is_active: true },
+        new Map(companies.map(document => [document.name.toLocaleLowerCase(), document]))
+    );
+    console.log(`✓ Company "${companyName}" is ready.`);
+
+    const existingProducts = await listAllDocuments('products');
+    const productByName = new Map(
+        existingProducts
+            .filter(document => document.company_id === company.$id)
+            .map(document => [document.name.toLocaleLowerCase(), document])
+    );
+    const productDocuments = new Map();
+
+    for (const product of products) {
+        const document = await createOrUpdateByName(
+            'products',
+            product.name,
+            {
+                company_id: company.$id,
+                name: product.name,
+                unit: 'packet',
+                price: product.price,
+                is_active: true,
+            },
+            productByName
+        );
+        productDocuments.set(product.name, document);
+    }
+    console.log(`✓ ${products.length} products are ready.`);
+
+    const existingAgents = await listAllDocuments('delivery_agents');
+    const agentByName = new Map(
+        existingAgents.map(document => [document.name.toLocaleLowerCase(), document])
+    );
+    const agentDocuments = new Map();
+
+    for (const agentName of [...agentNames].sort()) {
+        const document = await createOrUpdateByName(
+            'delivery_agents',
+            agentName,
+            { name: agentName, phone: '', is_active: true },
+            agentByName
+        );
+        agentDocuments.set(agentName, document);
+    }
+    console.log(`✓ ${agentDocuments.size} delivery agents are ready.`);
+
+    const existingCustomers = await listAllDocuments('customers');
+    const customerByName = new Map(
+        existingCustomers.map(document => [document.name.toLocaleLowerCase(), document])
+    );
+
+    for (let start = 0; start < customers.length; start += batchSize) {
+        const batch = customers.slice(start, start + batchSize);
+        for (const customer of batch) {
+            const subscriptions = customer.subscriptions.map(subscription => ({
+                product_id: productDocuments.get(subscription.productName).$id,
+                quantity: subscription.quantity,
+            }));
+            const primarySubscription = subscriptions[0];
+            const data = {
+                name: customer.name,
+                phone: '',
+                address: '',
+                route_id: null,
+                agent_id: agentDocuments.get(customer.agentName).$id,
+                billing_cycle: '1-to-last',
+                payment_type: 'postpaid',
+                subscriptions: JSON.stringify(subscriptions),
+                subscribed_product_id: primarySubscription?.product_id || null,
+                subscribed_quantity: primarySubscription?.quantity || 1,
+                display_order: customer.displayOrder,
+                is_active: true,
+            };
+
+            await createOrUpdateByName('customers', customer.name, data, customerByName);
+        }
+
+        console.log(`✓ Processed customers ${start + 1}-${start + batch.length}.`);
+    }
+
+    console.log('\nAppwrite customer import completed. No sample bills, payments, or delivery records were created.');
+}
+
+module.exports = { readCustomers };
+
+if (require.main === module) {
+    seed().catch(error => {
+        console.error('Seeding failed:', error);
+        process.exitCode = 1;
+    });
+}

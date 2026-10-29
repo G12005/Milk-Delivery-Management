@@ -1,20 +1,19 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { showToast } from '../components/Toast';
-import { IconClipboard, IconTruck, IconCheck, IconSquare, IconCheckSquare, IconLoader, IconBarChart } from '../components/Icons';
+import { IconClipboard, IconCheck, IconSquare, IconCheckSquare, IconLoader, IconBarChart } from '../components/Icons';
 
 export default function DailyDeliveriesPage() {
     const [deliveries, setDeliveries] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [products, setProducts] = useState([]);
-    const [routes, setRoutes] = useState([]);
     const [agents, setAgents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [savingRowKey, setSavingRowKey] = useState(null);
 
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
     const todayStr = new Date().toISOString().split('T')[0];
-    const [filterRoute, setFilterRoute] = useState('');
+    const [filterAgent, setFilterAgent] = useState('');
 
     // Local state for quantities edited by user before or after checking
     const [localQtyMap, setLocalQtyMap] = useState({});
@@ -22,18 +21,15 @@ export default function DailyDeliveriesPage() {
 
     const fetchData = async () => {
         try {
-            const [custRes, prodRes, routeRes, agentRes] = await Promise.all([
+            const [custRes, prodRes, agentRes] = await Promise.all([
                 fetch('/api/customers?limit=500'),
                 fetch('/api/products'),
-                fetch('/api/routes'),
                 fetch('/api/agents')
             ]);
             const custData = await custRes.json();
             setCustomers(Array.isArray(custData) ? custData : (custData?.customers || []));
             const prodData = await prodRes.json();
             setProducts(Array.isArray(prodData) ? prodData : []);
-            const routeData = await routeRes.json();
-            setRoutes(Array.isArray(routeData) ? routeData : []);
             const agentData = await agentRes.json();
             setAgents(Array.isArray(agentData) ? agentData : []);
         } catch (e) { console.error(e); }
@@ -42,8 +38,7 @@ export default function DailyDeliveriesPage() {
 
     const fetchDeliveries = async () => {
         try {
-            let url = `/api/daily-deliveries?date=${filterDate}`;
-            if (filterRoute) url += `&route_id=${filterRoute}`;
+            const url = `/api/daily-deliveries?date=${filterDate}`;
             const res = await fetch(url);
             const data = await res.json();
             setDeliveries(Array.isArray(data) ? data : []);
@@ -53,8 +48,7 @@ export default function DailyDeliveriesPage() {
     // fetch deliveries for specific date immediately
     const fetchDeliveriesFor = async (date) => {
         try {
-            let url = `/api/daily-deliveries?date=${date}`;
-            if (filterRoute) url += `&route_id=${filterRoute}`;
+            const url = `/api/daily-deliveries?date=${date}`;
             const res = await fetch(url);
             const data = await res.json();
             setDeliveries(Array.isArray(data) ? data : []);
@@ -62,26 +56,9 @@ export default function DailyDeliveriesPage() {
     };
 
     useEffect(() => { fetchData(); }, []);
-    useEffect(() => { if (!loading) fetchDeliveries(); }, [filterRoute, loading]);
+    useEffect(() => { if (!loading) fetchDeliveries(); }, [loading]);
 
-    // Assigned agent for selected route
-    const selectedRouteAgent = useMemo(() => {
-        if (!filterRoute) return null;
-        const custList = Array.isArray(customers) ? customers : [];
-        const agentList = Array.isArray(agents) ? agents : [];
-        const assignedCustomers = custList.filter(c => String(c?.route_id) === String(filterRoute));
-        if (assignedCustomers.length > 0 && assignedCustomers[0].agent_name) {
-            return assignedCustomers[0].agent_name;
-        }
-        for (const agent of agentList) {
-            if (agent.assigned_routes?.some(r => String(r.route_id) === String(filterRoute))) {
-                return agent.name;
-            }
-        }
-        return null;
-    }, [filterRoute, customers, agents]);
-
-    // Build list of attendance items per customer and product for the selected date & route
+    // Build list of attendance items per customer and product for the selected agent
     const attendanceData = useMemo(() => {
         const prodList = Array.isArray(products) ? products : [];
         const custList = Array.isArray(customers) ? customers : [];
@@ -90,14 +67,14 @@ export default function DailyDeliveriesPage() {
         const productMap = {};
         prodList.forEach(p => { if (p && p.id) productMap[p.id] = p; });
 
-        // Filter customers by selected route
-        const routeCustomers = filterRoute
-            ? custList.filter(c => String(c?.route_id) === String(filterRoute))
+        // Filter customers by their assigned agent
+        const agentCustomers = filterAgent
+            ? custList.filter(c => String(c?.agent_id || '') === String(filterAgent))
             : custList;
 
         const customerGroups = [];
 
-        routeCustomers.forEach(cust => {
+        agentCustomers.forEach(cust => {
             if (!cust) return;
             let items = [];
             if (Array.isArray(cust.parsed_subscriptions) && cust.parsed_subscriptions.length > 0) {
@@ -161,7 +138,7 @@ export default function DailyDeliveriesPage() {
         });
 
         return customerGroups;
-    }, [customers, products, deliveries, filterRoute, localQtyMap, addedProductsMap]);
+    }, [customers, products, deliveries, filterAgent, localQtyMap, addedProductsMap]);
 
     // All flat rows for summary calculation
     const flatRows = useMemo(() => {
@@ -266,7 +243,9 @@ export default function DailyDeliveriesPage() {
     const handleVerifyAll = async () => {
         const unverifiedRows = flatRows.filter(r => !r.is_verified);
         if (unverifiedRows.length === 0) {
-            showToast('All customer deliveries for this route are already verified!');
+            showToast(filterAgent
+                ? 'All customer deliveries for this agent are already verified!'
+                : 'All customer deliveries are already verified!');
             return;
         }
 
@@ -324,18 +303,12 @@ export default function DailyDeliveriesPage() {
                     }} style={{ width: 160 }} max={todayStr} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>Route:</label>
-                    <select className="form-control" value={filterRoute} onChange={(e) => setFilterRoute(e.target.value)} style={{ minWidth: 180 }}>
-                        <option value="">All Routes</option>
-                        {routes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>Agent:</label>
+                    <select className="form-control" value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} style={{ minWidth: 180 }}>
+                        <option value="">All Agents</option>
+                        {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
                     </select>
                 </div>
-
-                {filterRoute && (
-                    <div style={{ background: 'rgba(59,130,246,0.12)', padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(59,130,246,0.2)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span><IconTruck size={16} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong>Agent:</strong> {selectedRouteAgent || 'Unassigned'}</span>
-                    </div>
-                )}
 
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 16, alignItems: 'center' }}>
                     <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
@@ -361,8 +334,8 @@ export default function DailyDeliveriesPage() {
                                 <td colSpan={4}>
                                     <div className="empty-state">
                                         <div className="icon"><IconClipboard size={40} /></div>
-                                        <h3>No customers found for this route</h3>
-                                        <p>Select another route or add customers to get started</p>
+                                        <h3>{filterAgent ? 'No customers found for this agent' : 'No customers found'}</h3>
+                                        <p>{filterAgent ? 'Select another agent or add customers to get started' : 'Add customers to get started'}</p>
                                     </div>
                                 </td>
                             </tr>
@@ -467,7 +440,7 @@ export default function DailyDeliveriesPage() {
             {Object.keys(productSummary).length > 0 && (
                 <div style={{ marginTop: 24, padding: 18, background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)' }}>
                     <h3 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <IconBarChart size={18} /> Route Product Quantities Summary
+                        <IconBarChart size={18} /> {filterAgent ? 'Agent Product Quantities Summary' : 'Product Quantities Summary'}
                     </h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                         {Object.entries(productSummary).map(([pName, info]) => (
@@ -500,4 +473,3 @@ export default function DailyDeliveriesPage() {
         </div>
     );
 }
-
