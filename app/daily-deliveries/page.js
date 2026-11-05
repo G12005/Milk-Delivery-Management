@@ -281,7 +281,7 @@ export default function DailyDeliveriesPage() {
                     <h2>Daily Attendance Register</h2>
                     <p>Track daily product deliveries per customer with instant verification</p>
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div className="daily-register-header-actions" style={{ display: 'flex', gap: 10 }}>
                     <button className="btn btn-primary" onClick={handleVerifyAll} disabled={flatRows.length === 0}>
                         ✓ Verify All Pending ({flatRows.length - verifiedCount})
                     </button>
@@ -318,8 +318,8 @@ export default function DailyDeliveriesPage() {
             </div>
 
             {/* Attendance Sheet Table matching screenshot format */}
-            <div className="table-container" style={{ background: 'var(--card-bg)', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="table-container daily-register-table-container" style={{ background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                <table className="data-table daily-register-table">
                     <thead>
                         <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '2px solid var(--border)' }}>
                             <th style={{ padding: '12px 16px', textAlign: 'left', width: '35%' }}>Customer Name</th>
@@ -330,7 +330,7 @@ export default function DailyDeliveriesPage() {
                     </thead>
                     <tbody>
                         {attendanceData.length === 0 ? (
-                            <tr>
+                            <tr className="daily-register-empty-row">
                                 <td colSpan={4}>
                                     <div className="empty-state">
                                         <div className="icon"><IconClipboard size={40} /></div>
@@ -353,6 +353,7 @@ export default function DailyDeliveriesPage() {
                                         {/* Customer Name column - spans multiple rows if customer has multiple products */}
                                         {index === 0 && (
                                             <td
+                                                className="daily-register-customer-cell"
                                                 rowSpan={group.rows.length}
                                                 style={{
                                                     padding: '12px 16px',
@@ -382,12 +383,27 @@ export default function DailyDeliveriesPage() {
                                         )}
 
                                         {/* Product Name */}
-                                        <td style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--foreground)', fontSize: '0.9rem' }}>
+                                        <td className="daily-register-product-cell" style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--foreground)', fontSize: '0.9rem' }}>
+                                            <div className="daily-register-mobile-customer">
+                                                <div>{group.customer_name}</div>
+                                                {group.address && (
+                                                    <div className="daily-register-mobile-address">{group.address}</div>
+                                                )}
+                                                {index === 0 && (
+                                                    <select className="form-control" onChange={(e) => addProductForCustomer(group.customer_id, e.target.value)} value="">
+                                                        <option value="">+ Add product</option>
+                                                        {products.map(p => (
+                                                            <option key={p.id} value={p.id}>{p.name} — ₹{parseFloat(p.price || 0).toFixed(2)}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                            </div>
                                             {row.product_name}
                                         </td>
 
                                         {/* Quantity input */}
-                                        <td style={{ padding: '10px 16px', textAlign: 'center' }}>
+                                        <td className="daily-register-quantity-cell" style={{ padding: '10px 16px', textAlign: 'center' }}>
+                                            <span className="daily-register-mobile-label">Quantity</span>
                                             <input
                                                 className="form-control"
                                                 type="number"
@@ -400,7 +416,8 @@ export default function DailyDeliveriesPage() {
                                         </td>
 
                                         {/* Attendance Verification Checkbox */}
-                                        <td style={{ padding: '10px 16px', textAlign: 'center' }}>
+                                        <td className="daily-register-verify-cell" style={{ padding: '10px 16px', textAlign: 'center' }}>
+                                            <span className="daily-register-mobile-label">Verify</span>
                                             <button
                                                 type="button"
                                                 onClick={() => toggleVerification(row)}

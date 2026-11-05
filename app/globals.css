@@ -205,6 +205,9 @@ body {
   padding: 24px 28px;
   min-height: 100vh;
   min-height: 100dvh;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page-header {
@@ -389,6 +392,11 @@ select.form-control {
   padding: 10px 14px;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+.daily-register-mobile-customer,
+.daily-register-mobile-label {
+  display: none;
 }
 
 /* ── Badges ─────────────────────────────────────────── */
@@ -717,6 +725,106 @@ select.form-control {
   .table-container {
     border-radius: 8px;
   }
+
+  .daily-register-header-actions {
+    width: 100%;
+  }
+  .daily-register-header-actions .btn {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+  }
+
+  .daily-register-table-container {
+    overflow: visible;
+  }
+  .daily-register-table,
+  .daily-register-table tbody {
+    display: block;
+  }
+  .daily-register-table thead {
+    display: none;
+  }
+  .daily-register-table tbody tr:not(.daily-register-empty-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "details details"
+      "quantity verify";
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 14px;
+    border: 1px solid var(--border) !important;
+    border-radius: 10px;
+    background: var(--card) !important;
+    box-shadow: var(--shadow-sm);
+  }
+  .daily-register-table tbody tr:not(.daily-register-empty-row):last-child {
+    margin-bottom: 0;
+  }
+  .daily-register-table .daily-register-customer-cell {
+    display: none;
+  }
+  .daily-register-table .daily-register-product-cell,
+  .daily-register-table .daily-register-quantity-cell,
+  .daily-register-table .daily-register-verify-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0;
+    white-space: normal;
+  }
+  .daily-register-table .daily-register-product-cell {
+    grid-area: details;
+    font-size: 0.9rem;
+  }
+  .daily-register-mobile-customer {
+    display: block;
+    margin-bottom: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    color: var(--foreground);
+  }
+  .daily-register-mobile-address {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 400;
+  }
+  .daily-register-mobile-customer .form-control {
+    width: 100%;
+    margin-top: 8px;
+  }
+  .daily-register-table .daily-register-quantity-cell {
+    grid-area: quantity;
+  }
+  .daily-register-table .daily-register-verify-cell {
+    grid-area: verify;
+  }
+  .daily-register-mobile-label {
+    display: block;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: left;
+    text-transform: uppercase;
+  }
+  .daily-register-table .daily-register-quantity-cell .form-control {
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .daily-register-table .daily-register-verify-cell button {
+    justify-content: center;
+    min-height: 42px;
+  }
+  .daily-register-table .daily-register-empty-row {
+    display: block;
+  }
+
   .data-table {
     font-size: 0.8rem;
   }
