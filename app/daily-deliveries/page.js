@@ -18,6 +18,7 @@ export default function DailyDeliveriesPage() {
     // Local state for quantities edited by user before or after checking
     const [localQtyMap, setLocalQtyMap] = useState({});
     const [addedProductsMap, setAddedProductsMap] = useState({}); // customer_id -> [{ product_id, qty }]
+    const [pendingVerificationMap, setPendingVerificationMap] = useState({});
 
     const fetchData = async () => {
         try {
@@ -123,7 +124,7 @@ export default function DailyDeliveriesPage() {
                     rate: prod.price || sub.price || 0,
                     subscribed_qty: sub.quantity || 1.0,
                     qty: currentQty,
-                    is_verified: !!existingDoc,
+                    is_verified: !!existingDoc && !pendingVerificationMap[rowKey],
                     db_id: existingDoc ? existingDoc.id : null,
                 };
             }).filter(Boolean);
@@ -138,7 +139,7 @@ export default function DailyDeliveriesPage() {
         });
 
         return customerGroups;
-    }, [customers, products, deliveries, filterAgent, localQtyMap, addedProductsMap]);
+    }, [customers, products, deliveries, filterAgent, localQtyMap, addedProductsMap, pendingVerificationMap]);
 
     // All flat rows for summary calculation
     const flatRows = useMemo(() => {
@@ -166,49 +167,25 @@ export default function DailyDeliveriesPage() {
         const val = parseFloat(newQtyStr) || 0;
         setLocalQtyMap(prev => ({ ...prev, [row.rowKey]: val }));
 
-        // If row is already saved/verified in DB, update it instantly via PATCH
-        if (row.is_verified && row.db_id) {
-            setSavingRowKey(row.rowKey);
-            try {
-                await fetch(`/api/daily-deliveries/${row.db_id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quantity: val }),
-                });
-                fetchDeliveries();
-            } catch (e) {
-                showToast('Error updating quantity', 'error');
-            }
-            setSavingRowKey(null);
+        if (row.is_verified) {
+            setPendingVerificationMap(prev => ({ ...prev, [row.rowKey]: true }));
         }
     };
 
     const addProductForCustomer = async (customerId, productId) => {
         if (!productId) return;
         const rowKey = `${customerId}_${productId}`;
-        const defaultQty = 1.0;
-        setSavingRowKey(rowKey);
-        try {
-            // create delivery record immediately
-            const payload = {
-                customer_id: customerId,
-                product_id: productId,
-                delivery_date: filterDate,
-                quantity: defaultQty
-            };
-            await fetch('/api/daily-deliveries', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            // refresh deliveries from server so UI shows persisted record
-            await fetchDeliveriesFor(filterDate);
-            setLocalQtyMap(prev => ({ ...prev, [rowKey]: defaultQty }));
-            showToast('Product added and saved');
-        } catch (e) {
-            showToast('Error saving added product', 'error');
+        if (flatRows.some(row => row.rowKey === rowKey)) {
+            showToast('Product is already in this register', 'error');
+            return;
         }
-        setSavingRowKey(null);
+
+        setAddedProductsMap(prev => ({
+            ...prev,
+            [customerId]: [...(prev[customerId] || []), { product_id: productId, qty: 1.0 }],
+        }));
+        setLocalQtyMap(prev => ({ ...prev, [rowKey]: 1.0 }));
+        showToast('Product added. Set quantity, then verify.');
     };
 
     const toggleVerification = async (row) => {
@@ -216,11 +193,12 @@ export default function DailyDeliveriesPage() {
         try {
             if (row.is_verified && row.db_id) {
                 // Delete delivery record to unverify
-                await fetch(`/api/daily-deliveries/${row.db_id}`, { method: 'DELETE' });
+                const response = await fetch(`/api/daily-deliveries/${row.db_id}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to unverify delivery');
                 showToast(`Unverified ${row.customer_name} - ${row.product_name}`);
             } else {
                 // Save delivery record to DB
-                await fetch('/api/daily-deliveries', {
+                const response = await fetch('/api/daily-deliveries', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -230,6 +208,12 @@ export default function DailyDeliveriesPage() {
                         quantity: row.qty,
                         rate: row.rate
                     })
+                });
+                if (!response.ok) throw new Error('Failed to verify delivery');
+                setPendingVerificationMap(prev => {
+                    const next = { ...prev };
+                    delete next[row.rowKey];
+                    return next;
                 });
                 showToast(`Verified ${row.customer_name} (${row.qty} pkts)`);
             }
@@ -258,13 +242,19 @@ export default function DailyDeliveriesPage() {
         }));
 
         try {
-            await fetch('/api/daily-deliveries', {
+            const response = await fetch('/api/daily-deliveries', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            if (!response.ok) throw new Error('Failed to verify deliveries');
+            setPendingVerificationMap(prev => {
+                const next = { ...prev };
+                unverifiedRows.forEach(row => delete next[row.rowKey]);
+                return next;
+            });
             showToast(`Verified & saved ${unverifiedRows.length} deliveries to DB!`);
-            fetchDeliveries();
+            await fetchDeliveries();
         } catch (e) {
             showToast('Error bulk verifying deliveries', 'error');
         }
@@ -298,6 +288,7 @@ export default function DailyDeliveriesPage() {
                         setDeliveries([]);
                         setLocalQtyMap({});
                         setAddedProductsMap({});
+                        setPendingVerificationMap({});
                         // fetch fresh data for selected date
                         fetchDeliveriesFor(newDate);
                     }} style={{ width: 160 }} max={todayStr} />
