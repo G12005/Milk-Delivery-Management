@@ -14,6 +14,7 @@ export default function DailyDeliveriesPage() {
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
     const todayStr = new Date().toISOString().split('T')[0];
     const [filterAgent, setFilterAgent] = useState('');
+    const [filterProduct, setFilterProduct] = useState('');
 
     // Local state for quantities edited by user before or after checking
     const [localQtyMap, setLocalQtyMap] = useState({});
@@ -141,10 +142,24 @@ export default function DailyDeliveriesPage() {
         return customerGroups;
     }, [customers, products, deliveries, filterAgent, localQtyMap, addedProductsMap, pendingVerificationMap]);
 
-    // All flat rows for summary calculation
-    const flatRows = useMemo(() => {
+    const filteredAttendanceData = useMemo(() => {
+        if (!filterProduct) return attendanceData;
+
+        return attendanceData
+            .map(group => ({
+                ...group,
+                rows: group.rows.filter(row => String(row.product_id) === String(filterProduct))
+            }))
+            .filter(group => group.rows.length > 0);
+    }, [attendanceData, filterProduct]);
+
+    const allFlatRows = useMemo(() => {
         return attendanceData.flatMap(g => g.rows);
     }, [attendanceData]);
+
+    const flatRows = useMemo(() => {
+        return filteredAttendanceData.flatMap(g => g.rows);
+    }, [filteredAttendanceData]);
 
     // Product totals summary for footer
     const productSummary = useMemo(() => {
@@ -175,7 +190,7 @@ export default function DailyDeliveriesPage() {
     const addProductForCustomer = async (customerId, productId) => {
         if (!productId) return;
         const rowKey = `${customerId}_${productId}`;
-        if (flatRows.some(row => row.rowKey === rowKey)) {
+        if (allFlatRows.some(row => row.rowKey === rowKey)) {
             showToast('Product is already in this register', 'error');
             return;
         }
@@ -227,9 +242,7 @@ export default function DailyDeliveriesPage() {
     const handleVerifyAll = async () => {
         const unverifiedRows = flatRows.filter(r => !r.is_verified);
         if (unverifiedRows.length === 0) {
-            showToast(filterAgent
-                ? 'All customer deliveries for this agent are already verified!'
-                : 'All customer deliveries are already verified!');
+            showToast('All displayed deliveries are already verified!');
             return;
         }
 
@@ -300,6 +313,13 @@ export default function DailyDeliveriesPage() {
                         {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
                     </select>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>Product:</label>
+                    <select className="form-control" value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} style={{ minWidth: 180 }}>
+                        <option value="">All Products</option>
+                        {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                    </select>
+                </div>
 
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 16, alignItems: 'center' }}>
                     <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
@@ -320,18 +340,22 @@ export default function DailyDeliveriesPage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {attendanceData.length === 0 ? (
+                        {filteredAttendanceData.length === 0 ? (
                             <tr className="daily-register-empty-row">
                                 <td colSpan={4}>
                                     <div className="empty-state">
                                         <div className="icon"><IconClipboard size={40} /></div>
-                                        <h3>{filterAgent ? 'No customers found for this agent' : 'No customers found'}</h3>
-                                        <p>{filterAgent ? 'Select another agent or add customers to get started' : 'Add customers to get started'}</p>
+                                        <h3>{filterProduct
+                                            ? (filterAgent ? 'No deliveries found for this product and agent' : 'No deliveries found for this product')
+                                            : (filterAgent ? 'No customers found for this agent' : 'No customers found')}</h3>
+                                        <p>{filterProduct
+                                            ? 'Select another product or clear the filters'
+                                            : (filterAgent ? 'Select another agent or add customers to get started' : 'Add customers to get started')}</p>
                                     </div>
                                 </td>
                             </tr>
                         ) : (
-                            attendanceData.map((group) => (
+                            filteredAttendanceData.map((group) => (
                                 group.rows.map((row, index) => (
                                     <tr
                                         key={row.rowKey}
