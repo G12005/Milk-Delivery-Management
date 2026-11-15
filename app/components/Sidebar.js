@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import {
     IconDashboard, IconUsers, IconClipboard, IconMap, IconTruck,
@@ -45,12 +45,19 @@ const navSections = [
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
     const [open, setOpen] = useState(false);
 
-    // Close sidebar on route change (mobile)
-    useEffect(() => {
-        setOpen(false);
-    }, [pathname]);
+    const handleSignOut = async () => {
+        try {
+            const response = await fetch('/api/auth/session', { method: 'DELETE' });
+            if (!response.ok) throw new Error('Unable to sign out');
+            router.replace('/login');
+            router.refresh();
+        } catch {
+            window.alert('Unable to sign out. Please try again.');
+        }
+    };
 
     // Close on escape key
     useEffect(() => {
@@ -58,6 +65,8 @@ export default function Sidebar() {
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, []);
+
+    if (pathname === '/login' || pathname.startsWith('/agent-deliveries')) return null;
 
     return (
         <>
@@ -109,6 +118,7 @@ export default function Sidebar() {
                                     <Link
                                         key={link.href}
                                         href={link.href}
+                                        onClick={() => setOpen(false)}
                                         className={`nav-link${pathname === link.href ? ' active' : ''}`}
                                     >
                                         <span className="icon"><Icon size={18} /></span>
@@ -118,6 +128,9 @@ export default function Sidebar() {
                             })}
                         </div>
                     ))}
+                    <button className="btn btn-secondary sidebar-signout" onClick={handleSignOut}>
+                        Sign out
+                    </button>
                 </nav>
             </aside>
         </>

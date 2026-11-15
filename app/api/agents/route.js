@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS, Query, ID } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function GET() {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const db = getDatabases();
 
@@ -40,9 +43,23 @@ export async function GET() {
 }
 
 export async function POST(request) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
-        const { name, phone, route_ids } = await request.json();
+        const { name, phone, email, route_ids } = await request.json();
         const db = getDatabases();
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        if (!normalizedEmail) {
+            return NextResponse.json({ error: 'Agent Google email required' }, { status: 400 });
+        }
+
+        const matchingAgents = await db.listDocuments(DATABASE_ID, COLLECTIONS.DELIVERY_AGENTS, [
+            Query.equal('email', normalizedEmail),
+            Query.limit(1),
+        ]);
+        if (matchingAgents.documents.length > 0) {
+            return NextResponse.json({ error: 'An agent already uses this Google email' }, { status: 409 });
+        }
 
         const agentDoc = await db.createDocument(
             DATABASE_ID,
@@ -51,6 +68,7 @@ export async function POST(request) {
             {
                 name,
                 phone: phone || '',
+                email: normalizedEmail,
                 is_active: true
             }
         );

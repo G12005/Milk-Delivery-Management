@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function PUT(request, { params }) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { id } = params;
         const { company_id, name, unit, price, is_active } = await request.json();
@@ -34,6 +37,8 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { id } = await params;
         const db = getDatabases();

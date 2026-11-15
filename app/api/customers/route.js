@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS, Query, ID } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function GET(request) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { searchParams } = new URL(request.url);
         const routeId = searchParams.get('route_id');
@@ -93,6 +96,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { name, phone, address, route_id, agent_id, billing_cycle, payment_type, subscriptions, subscribed_product_id, subscribed_quantity } = await request.json();
         const db = getDatabases();

@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS, Query, ID } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function GET(request) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { searchParams } = new URL(request.url);
         const companyId = searchParams.get('company_id');
@@ -33,6 +36,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { company_id, name, unit, price } = await request.json();
         const db = getDatabases();

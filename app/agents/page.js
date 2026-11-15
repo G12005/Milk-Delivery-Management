@@ -4,6 +4,19 @@ import Modal from '../components/Modal';
 import { showToast } from '../components/Toast';
 import { IconTruck, IconEdit, IconCheck, IconSquare, IconCheckSquare } from '../components/Icons';
 
+async function fetchAgentsData() {
+    const [agentRes, routeRes] = await Promise.all([
+        fetch('/api/agents'), fetch('/api/routes'),
+    ]);
+    if (!agentRes.ok || !routeRes.ok) throw new Error('Unable to load agent data');
+    const agentData = await agentRes.json();
+    const routeData = await routeRes.json();
+    return {
+        agents: Array.isArray(agentData) ? agentData : [],
+        routes: Array.isArray(routeData) ? routeData : [],
+    };
+}
+
 export default function AgentsPage() {
     const [agents, setAgents] = useState([]);
     const [routes, setRoutes] = useState([]);
@@ -11,45 +24,65 @@ export default function AgentsPage() {
     const [showModal, setShowModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editAgent, setEditAgent] = useState(null);
-    const [editForm, setEditForm] = useState({ name: '', phone: '', route_ids: [], is_active: true });
-    const [form, setForm] = useState({ name: '', phone: '', route_ids: [] });
+    const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', route_ids: [], is_active: true });
+    const [form, setForm] = useState({ name: '', phone: '', email: '', route_ids: [] });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [savingAgentId, setSavingAgentId] = useState(null);
 
     const fetchData = async () => {
         try {
-            const [agentRes, routeRes] = await Promise.all([
-                fetch('/api/agents'), fetch('/api/routes'),
-            ]);
-            const agentData = await agentRes.json();
-            setAgents(Array.isArray(agentData) ? agentData : []);
-            const routeData = await routeRes.json();
-            setRoutes(Array.isArray(routeData) ? routeData : []);
-        } catch (e) { console.error(e); }
+            const { agents: agentData, routes: routeData } = await fetchAgentsData();
+            setAgents(agentData);
+            setRoutes(routeData);
+        } catch (e) {
+            console.error(e);
+            showToast(e.message || 'Unable to load agent data', 'error');
+        }
         setLoading(false);
     };
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => {
+        let isActive = true;
+        fetchAgentsData()
+            .then(({ agents: agentData, routes: routeData }) => {
+                if (!isActive) return;
+                setAgents(agentData);
+                setRoutes(routeData);
+            })
+            .catch(e => {
+                if (!isActive) return;
+                console.error(e);
+                showToast(e.message || 'Unable to load agent data', 'error');
+            })
+            .finally(() => {
+                if (isActive) setLoading(false);
+            });
+        return () => {
+            isActive = false;
+        };
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (isSubmitting) return;
         setIsSubmitting(true);
         try {
-            await fetch('/api/agents', {
+            const response = await fetch('/api/agents', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form),
             });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Error adding agent');
             showToast('Agent added successfully');
             setShowModal(false);
             fetchData();
-        } catch (e) { showToast('Error adding agent', 'error'); }
+        } catch (e) { showToast(e.message || 'Error adding agent', 'error'); }
         setIsSubmitting(false);
     };
 
     const openEdit = (a) => {
         setEditAgent(a);
-        setEditForm({ name: a.name || '', phone: a.phone || '', route_ids: (a.assigned_routes || []).map(r => r.route_id), is_active: a.is_active !== false });
+        setEditForm({ name: a.name || '', phone: a.phone || '', email: a.email || '', route_ids: (a.assigned_routes || []).map(r => r.route_id), is_active: a.is_active !== false });
         setShowEditModal(true);
     };
 
@@ -59,14 +92,16 @@ export default function AgentsPage() {
         if (savingAgentId) return;
         setSavingAgentId(editAgent.id);
         try {
-            await fetch(`/api/agents/${editAgent.id}`, {
+            const response = await fetch(`/api/agents/${editAgent.id}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(editForm),
             });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Error updating agent');
             showToast('Agent updated');
             setShowEditModal(false);
             fetchData();
-        } catch (e) { showToast('Error updating agent', 'error'); }
+        } catch (e) { showToast(e.message || 'Error updating agent', 'error'); }
         setSavingAgentId(null);
     };
 
@@ -88,7 +123,7 @@ export default function AgentsPage() {
                     <h2>Delivery Agents</h2>
                     <p>Manage agents and their route assignments</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => { setForm({ name: '', phone: '', route_ids: [] }); setShowModal(true); }}>+ Add Agent</button>
+                <button className="btn btn-primary" onClick={() => { setForm({ name: '', phone: '', email: '', route_ids: [] }); setShowModal(true); }}>+ Add Agent</button>
             </div>
 
             <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
@@ -101,6 +136,7 @@ export default function AgentsPage() {
                             <div>
                                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{a.name}</h3>
                                 <p style={{ margin: '2px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>{a.phone || 'No phone'}</p>
+                                <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>{a.email || 'Google email not linked'}</p>
                             </div>
                             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
                                 <button className="btn-icon" onClick={() => openEdit(a)} title="Edit agent" disabled={savingAgentId === a.id}><IconEdit size={14} /></button>
@@ -127,6 +163,10 @@ export default function AgentsPage() {
                             <label>Phone</label>
                             <input className="form-control" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
                         </div>
+                    </div>
+                    <div className="form-group">
+                        <label>Google email *</label>
+                        <input className="form-control" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                     </div>
                     <div className="form-group">
                         <label>Assign Routes</label>
@@ -157,6 +197,10 @@ export default function AgentsPage() {
                             <label>Phone</label>
                             <input className="form-control" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
                         </div>
+                    </div>
+                    <div className="form-group">
+                        <label>Google email *</label>
+                        <input className="form-control" type="email" required value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
                     </div>
                     <div className="form-group">
                         <label>Assign Routes</label>

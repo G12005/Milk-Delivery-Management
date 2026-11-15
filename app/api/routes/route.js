@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS, Query, ID } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function GET() {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const db = getDatabases();
         const res = await db.listDocuments(DATABASE_ID, COLLECTIONS.ROUTES, [Query.orderAsc('name'), Query.limit(100)]);
@@ -13,6 +16,8 @@ export async function GET() {
 }
 
 export async function POST(request) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { name, area } = await request.json();
         const db = getDatabases();

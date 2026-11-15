@@ -1,5 +1,6 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 async function handleUpdate(request, params) {
     try {
@@ -35,14 +36,20 @@ async function handleUpdate(request, params) {
 }
 
 export async function PATCH(request, context) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     return handleUpdate(request, context.params);
 }
 
 export async function PUT(request, context) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     return handleUpdate(request, context.params);
 }
 
 export async function DELETE(request, { params }) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { id } = await params;
         const db = getDatabases();

@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS, Query } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function GET() {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const db = getDatabases();
 

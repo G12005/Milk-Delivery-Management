@@ -1,7 +1,10 @@
 import { getDatabases, DATABASE_ID, COLLECTIONS, Query } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
+import { authorizeRole } from '@/lib/auth-session';
 
 export async function GET(request, { params }) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { id } = await params;
         const db = getDatabases();
@@ -70,6 +73,8 @@ export async function GET(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+    const { response } = await authorizeRole('admin');
+    if (response) return response;
     try {
         const { id } = await params;
         const db = getDatabases();
