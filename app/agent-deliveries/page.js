@@ -7,7 +7,10 @@ async function fetchAssignedDeliveries() {
     const response = await fetch('/api/agent-deliveries');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not load assigned deliveries');
-    return data.customers || [];
+    return {
+        customers: Array.isArray(data.customers) ? data.customers : [],
+        products: Array.isArray(data.products) ? data.products : [],
+    };
 }
 
 function getInitialQuantities(customers) {
@@ -22,6 +25,7 @@ function getInitialQuantities(customers) {
 export default function AgentDeliveriesPage() {
     const router = useRouter();
     const [customers, setCustomers] = useState([]);
+    const [products, setProducts] = useState([]);
     const [quantities, setQuantities] = useState({});
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -32,8 +36,9 @@ export default function AgentDeliveriesPage() {
 
     const loadDeliveries = async () => {
         try {
-            const assignedCustomers = await fetchAssignedDeliveries();
+            const { customers: assignedCustomers, products: availableProducts } = await fetchAssignedDeliveries();
             setCustomers(assignedCustomers);
+            setProducts(availableProducts);
             setQuantities(getInitialQuantities(assignedCustomers));
         } catch (loadError) {
             setError(loadError.message);
@@ -45,9 +50,10 @@ export default function AgentDeliveriesPage() {
     useEffect(() => {
         let isActive = true;
         fetchAssignedDeliveries()
-            .then(assignedCustomers => {
+            .then(({ customers: assignedCustomers, products: availableProducts }) => {
                 if (!isActive) return;
                 setCustomers(assignedCustomers);
+                setProducts(availableProducts);
                 setQuantities(getInitialQuantities(assignedCustomers));
             })
             .catch(loadError => {
@@ -77,6 +83,33 @@ export default function AgentDeliveriesPage() {
                 quantity: quantities[`${customer.id}_${item.product_id}`],
             }))
     ), [customers, quantities]);
+
+    const addProductForCustomer = (customerId, productId) => {
+        if (!productId) return;
+        const product = products.find(item => String(item.id) === String(productId));
+        if (!product) return;
+
+        const customer = customers.find(item => item.id === customerId);
+        if (!customer || customer.items.some(item => String(item.product_id) === String(productId))) return;
+
+        const newItem = {
+            product_id: product.id,
+            product_name: product.name,
+            unit: product.unit || 'packet',
+            quantity: 1,
+            delivered: false,
+            delivery_id: null,
+            submitted_at: null,
+            editable_until: null,
+        };
+        setCustomers(previous => previous.map(item => item.id === customerId
+            ? { ...item, items: [...item.items, newItem] }
+            : item));
+        setQuantities(previous => ({
+            ...previous,
+            [`${customerId}_${product.id}`]: '1',
+        }));
+    };
 
     const submitDeliveries = async () => {
         setSubmitting(true);
@@ -165,9 +198,8 @@ export default function AgentDeliveriesPage() {
                 <section className="agent-customer" key={customer.id}>
                     <h2>{customer.name}</h2>
                     {customer.address && <p>{customer.address}</p>}
-                    {customer.items.length === 0 ? (
-                        <p>No subscribed products assigned.</p>
-                    ) : customer.items.map(item => {
+                    {customer.items.length === 0 && <p>No products in today’s register.</p>}
+                    {customer.items.map(item => {
                         const key = `${customer.id}_${item.product_id}`;
                         const editableUntil = Date.parse(item.editable_until);
                         const quantity = Number(quantities[key]);
@@ -225,6 +257,24 @@ export default function AgentDeliveriesPage() {
                             </div>
                         );
                     })}
+                    <label className="agent-add-product">
+                        <span>Add product to today’s register</span>
+                        <select
+                            className="form-control"
+                            value=""
+                            disabled={submitting}
+                            onChange={event => addProductForCustomer(customer.id, event.target.value)}
+                        >
+                            <option value="">+ Add product</option>
+                            {products
+                                .filter(product => !customer.items.some(item => String(item.product_id) === String(product.id)))
+                                .map(product => (
+                                    <option key={product.id} value={product.id}>
+                                        {product.name} — ₹{Number(product.price || 0).toFixed(2)}
+                                    </option>
+                                ))}
+                        </select>
+                    </label>
                 </section>
             ))}
 

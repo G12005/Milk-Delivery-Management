@@ -111,6 +111,20 @@ body {
   margin-bottom: 16px;
 }
 
+.agent-add-product {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.agent-add-product .form-control {
+  width: 100%;
+}
+
 .agent-delivery-row {
   display: flex;
   align-items: center;

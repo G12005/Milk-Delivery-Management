@@ -48,15 +48,22 @@ export async function GET() {
         const customerIds = new Set(customersRes.documents.map(customer => customer.$id));
         const productMap = new Map(productsRes.documents.map(product => [product.$id, product]));
         const deliveryMap = new Map();
+        const deliveriesByCustomer = new Map();
         deliveriesRes.documents
             .filter(delivery => customerIds.has(delivery.customer_id))
-            .forEach(delivery => deliveryMap.set(`${delivery.customer_id}_${delivery.product_id}`, delivery));
+            .forEach(delivery => {
+                deliveryMap.set(`${delivery.customer_id}_${delivery.product_id}`, delivery);
+            });
+        deliveryMap.forEach(delivery => {
+            const customerDeliveries = deliveriesByCustomer.get(delivery.customer_id) || [];
+            customerDeliveries.push(delivery);
+            deliveriesByCustomer.set(delivery.customer_id, customerDeliveries);
+        });
 
-        const customers = customersRes.documents.map(customer => ({
-            id: customer.$id,
-            name: customer.name,
-            address: customer.address || '',
-            items: parseSubscriptions(customer).map(subscription => {
+        const customers = customersRes.documents.map(customer => {
+            const subscriptions = parseSubscriptions(customer);
+            const subscriptionProductIds = new Set(subscriptions.map(subscription => String(subscription.product_id)));
+            const subscribedItems = subscriptions.map(subscription => {
                 const product = productMap.get(subscription.product_id);
                 const existing = deliveryMap.get(`${customer.$id}_${subscription.product_id}`);
                 return {
@@ -71,10 +78,41 @@ export async function GET() {
                         ? new Date(Date.parse(existing.$createdAt) + EDIT_WINDOW_MS).toISOString()
                         : null,
                 };
-            }),
+            });
+            const addedItems = (deliveriesByCustomer.get(customer.$id) || [])
+                .filter(delivery => !subscriptionProductIds.has(String(delivery.product_id)))
+                .map(delivery => {
+                    const product = productMap.get(delivery.product_id);
+                    return {
+                        product_id: delivery.product_id,
+                        product_name: product?.name || 'Product',
+                        unit: product?.unit || 'packet',
+                        quantity: Number(delivery.quantity),
+                        delivered: true,
+                        delivery_id: delivery.$id,
+                        submitted_at: delivery.$createdAt,
+                        editable_until: delivery.$createdAt
+                            ? new Date(Date.parse(delivery.$createdAt) + EDIT_WINDOW_MS).toISOString()
+                            : null,
+                    };
+                });
+
+            return {
+                id: customer.$id,
+                name: customer.name,
+                address: customer.address || '',
+                items: [...subscribedItems, ...addedItems],
+            };
+        });
+
+        const products = productsRes.documents.map(product => ({
+            id: product.$id,
+            name: product.name,
+            unit: product.unit || 'packet',
+            price: Number(product.price) || 0,
         }));
 
-        return NextResponse.json({ date: today, customers });
+        return NextResponse.json({ date: today, customers, products });
     } catch (error) {
         console.error('Agent delivery list failed:', error);
         return NextResponse.json({ error: 'Unable to load assigned deliveries' }, { status: 500 });
@@ -122,12 +160,6 @@ export async function PATCH(request) {
 
         if (customer.agent_id !== principal.agentId || customer.is_active === false) {
             return NextResponse.json({ error: 'This delivery is not assigned to you' }, { status: 403 });
-        }
-
-        const isAssignedProduct = parseSubscriptions(customer)
-            .some(subscription => String(subscription.product_id) === String(delivery.product_id));
-        if (!isAssignedProduct) {
-            return NextResponse.json({ error: 'This product is not assigned to the customer' }, { status: 403 });
         }
 
         const submittedAt = Date.parse(delivery.$createdAt);
@@ -206,11 +238,6 @@ export async function POST(request) {
             const product = productMap.get(String(item.product_id));
             if (!customer || !product) {
                 return NextResponse.json({ error: 'A customer or product is not assigned to this agent' }, { status: 403 });
-            }
-            const assignedProduct = parseSubscriptions(customer)
-                .some(subscription => String(subscription.product_id) === String(item.product_id));
-            if (!assignedProduct) {
-                return NextResponse.json({ error: 'A product is not assigned to this customer' }, { status: 403 });
             }
             if (existingKeys.has(`${customer.$id}_${product.$id}`)) {
                 return NextResponse.json({ error: 'A submitted delivery cannot be edited or resubmitted' }, { status: 409 });
