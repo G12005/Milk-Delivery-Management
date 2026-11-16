@@ -5,14 +5,22 @@ import { IconBarChart } from '../components/Icons';
 export default function InventoryPage() {
     const [inventory, setInventory] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
 
     useEffect(() => {
-        fetch('/api/inventory')
-            .then((r) => r.json())
+        fetch(`/api/inventory?date=${filterDate}`)
+            .then((r) => {
+                if (!r.ok) throw new Error('Failed to load inventory');
+                return r.json();
+            })
             .then((data) => setInventory(Array.isArray(data) ? data : []))
-            .catch(console.error)
+            .catch((e) => {
+                console.error(e);
+                setError(e.message);
+            })
             .finally(() => setLoading(false));
-    }, []);
+    }, [filterDate]);
 
     if (loading) return <div className="spinner" />;
 
@@ -28,11 +36,31 @@ export default function InventoryPage() {
             <div className="page-header">
                 <div>
                     <h2>Inventory</h2>
-                    <p>Current stock levels — Purchased minus Delivered</p>
+                    <p>Daily purchases minus deliveries. Previous days are excluded.</p>
                 </div>
             </div>
 
-            {Object.keys(grouped).length === 0 ? (
+            <div className="filters-bar">
+                <label htmlFor="inventory-date">Date</label>
+                <input
+                    id="inventory-date"
+                    className="form-control"
+                    type="date"
+                    value={filterDate}
+                    onChange={(e) => {
+                        setLoading(true);
+                        setError('');
+                        setFilterDate(e.target.value || new Date().toISOString().split('T')[0]);
+                    }}
+                    style={{ width: 180 }}
+                />
+            </div>
+
+            {error ? (
+                <div className="empty-state"><h3>Unable to load inventory</h3><p>{error}</p></div>
+            ) : loading ? (
+                <div className="spinner" />
+            ) : Object.keys(grouped).length === 0 ? (
                 <div className="empty-state"><div className="icon"><IconBarChart size={40} /></div><h3>No inventory data</h3><p>Start by adding purchases and deliveries</p></div>
             ) : Object.entries(grouped).map(([company, items]) => (
                 <div key={company} style={{ marginBottom: 28 }}>

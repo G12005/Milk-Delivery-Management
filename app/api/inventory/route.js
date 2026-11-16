@@ -2,17 +2,19 @@ import { getDatabases, DATABASE_ID, COLLECTIONS, Query } from '@/lib/appwrite';
 import { NextResponse } from 'next/server';
 import { authorizeRole } from '@/lib/auth-session';
 
-export async function GET() {
+export async function GET(request) {
     const { response } = await authorizeRole('admin');
     if (response) return response;
     try {
+        const { searchParams } = new URL(request.url);
+        const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
         const db = getDatabases();
 
         const [productsRes, companiesRes, purchasesRes, deliveriesRes] = await Promise.all([
             db.listDocuments(DATABASE_ID, COLLECTIONS.PRODUCTS, [Query.equal('is_active', true), Query.limit(500)]),
             db.listDocuments(DATABASE_ID, COLLECTIONS.COMPANIES, [Query.limit(100)]),
-            db.listDocuments(DATABASE_ID, COLLECTIONS.PURCHASE_ENTRIES, [Query.limit(1000)]),
-            db.listDocuments(DATABASE_ID, COLLECTIONS.DAILY_DELIVERIES, [Query.limit(1000)])
+            db.listDocuments(DATABASE_ID, COLLECTIONS.PURCHASE_ENTRIES, [Query.equal('purchase_date', date), Query.limit(1000)]),
+            db.listDocuments(DATABASE_ID, COLLECTIONS.DAILY_DELIVERIES, [Query.equal('delivery_date', date), Query.limit(1000)])
         ]);
 
         const companyMap = {};
