@@ -2,30 +2,52 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { IconBarChart } from '../components/Icons';
 
 async function fetchAssignedDeliveries() {
     const response = await fetch('/api/agent-deliveries');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not load assigned deliveries');
     return {
+        date: data.date,
         customers: Array.isArray(data.customers) ? data.customers : [],
         products: Array.isArray(data.products) ? data.products : [],
     };
 }
 
+function formatDeliveryDate(date) {
+    if (!date) return '';
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    });
+}
+
 function getInitialQuantities(customers) {
     return Object.fromEntries(
-        customers.flatMap(customer => customer.items.map(item => [
-            `${customer.id}_${item.product_id}`,
-            String(item.quantity),
-        ]))
+        customers.flatMap(customer => customer.items.map(item => {
+            const quantity = Number(item.quantity);
+            return [
+                `${customer.id}_${item.product_id}`,
+                String(Number.isFinite(quantity) && quantity >= 0 ? quantity : 0),
+            ];
+        }))
     );
+}
+
+function isEmptyQuantity(quantity) {
+    return quantity == null || (typeof quantity === 'string' && quantity.trim() === '');
 }
 
 export default function AgentDeliveriesPage() {
     const router = useRouter();
     const [customers, setCustomers] = useState([]);
     const [products, setProducts] = useState([]);
+    const [deliveryDate, setDeliveryDate] = useState('');
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [productFilter, setProductFilter] = useState('');
     const [quantities, setQuantities] = useState({});
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -36,7 +58,8 @@ export default function AgentDeliveriesPage() {
 
     const loadDeliveries = async () => {
         try {
-            const { customers: assignedCustomers, products: availableProducts } = await fetchAssignedDeliveries();
+            const { date, customers: assignedCustomers, products: availableProducts } = await fetchAssignedDeliveries();
+            setDeliveryDate(date);
             setCustomers(assignedCustomers);
             setProducts(availableProducts);
             setQuantities(getInitialQuantities(assignedCustomers));
@@ -47,11 +70,44 @@ export default function AgentDeliveriesPage() {
         }
     };
 
+    const filteredCustomers = useMemo(() => {
+        const search = customerSearch.trim().toLocaleLowerCase();
+        if (!search) return customers;
+        return customers.filter(customer => (
+            `${customer.name || ''} ${customer.address || ''}`.toLocaleLowerCase().includes(search)
+        ));
+    }, [customers, customerSearch]);
+
+    const productSummary = useMemo(() => {
+        const summary = {};
+        filteredCustomers.forEach(customer => {
+            customer.items
+                .filter(item => !productFilter || String(item.product_id) === productFilter)
+                .forEach(item => {
+                const productName = item.product_name;
+                if (!summary[productName]) {
+                    summary[productName] = { totalQty: 0, verifiedQty: 0, count: 0 };
+                }
+
+                const key = `${customer.id}_${item.product_id}`;
+                const parsedQuantity = Number.parseFloat(quantities[key] ?? item.quantity);
+                const quantity = Number.isFinite(parsedQuantity) ? parsedQuantity : 0;
+                summary[productName].totalQty += quantity;
+                summary[productName].count += 1;
+                if (item.delivered && quantity === Number(item.quantity)) {
+                    summary[productName].verifiedQty += quantity;
+                }
+            });
+        });
+        return summary;
+    }, [filteredCustomers, productFilter, quantities]);
+
     useEffect(() => {
         let isActive = true;
         fetchAssignedDeliveries()
-            .then(({ customers: assignedCustomers, products: availableProducts }) => {
+            .then(({ date, customers: assignedCustomers, products: availableProducts }) => {
                 if (!isActive) return;
+                setDeliveryDate(date);
                 setCustomers(assignedCustomers);
                 setProducts(availableProducts);
                 setQuantities(getInitialQuantities(assignedCustomers));
@@ -80,9 +136,17 @@ export default function AgentDeliveriesPage() {
             .map(item => ({
                 customer_id: customer.id,
                 product_id: item.product_id,
-                quantity: quantities[`${customer.id}_${item.product_id}`],
+                quantity: isEmptyQuantity(quantities[`${customer.id}_${item.product_id}`])
+                    ? 0
+                    : quantities[`${customer.id}_${item.product_id}`],
             }))
     ), [customers, quantities]);
+
+    const restoreEmptyQuantity = key => {
+        setQuantities(previous => isEmptyQuantity(previous[key])
+            ? { ...previous, [key]: '0' }
+            : previous);
+    };
 
     const addProductForCustomer = (customerId, productId) => {
         if (!productId) return;
@@ -181,10 +245,49 @@ export default function AgentDeliveriesPage() {
             <header className="agent-header">
                 <div>
                     <h1>Today’s deliveries</h1>
+                    <p className="agent-date">Date: {formatDeliveryDate(deliveryDate)}</p>
                     <p>Only customers assigned to your account appear here.</p>
                 </div>
                 <button className="btn btn-secondary" onClick={signOut}>Sign out</button>
             </header>
+
+            <div className="agent-delivery-filters">
+                <label className="agent-delivery-filter">
+                    Search customers
+                    <input
+                        className="form-control"
+                        type="search"
+                        placeholder="Search by name or address"
+                        value={customerSearch}
+                        onChange={event => setCustomerSearch(event.target.value)}
+                    />
+                </label>
+                <label className="agent-delivery-filter">
+                    Filter by product
+                    <select
+                        className="form-control"
+                        value={productFilter}
+                        onChange={event => setProductFilter(event.target.value)}
+                    >
+                        <option value="">All products</option>
+                        {products.map(product => (
+                            <option key={product.id} value={String(product.id)}>{product.name}</option>
+                        ))}
+                    </select>
+                </label>
+                {(customerSearch || productFilter) && (
+                    <button
+                        className="btn btn-secondary"
+                        type="button"
+                        onClick={() => {
+                            setCustomerSearch('');
+                            setProductFilter('');
+                        }}
+                    >
+                        Clear filters
+                    </button>
+                )}
+            </div>
 
             {error && <p className="auth-error" role="alert">{error}</p>}
             {message && <p className="agent-success" role="status">{message}</p>}
@@ -194,17 +297,29 @@ export default function AgentDeliveriesPage() {
                     <h2>No assigned customers</h2>
                     <p>Ask your administrator to assign customers to your account.</p>
                 </section>
-            ) : customers.map(customer => (
+            ) : filteredCustomers.length === 0 ? (
+                <section className="auth-card">
+                    <h2>No matching customers</h2>
+                    <p>Try another search.</p>
+                </section>
+            ) : filteredCustomers.map(customer => {
+                const visibleItems = customer.items.filter(item => (
+                    !productFilter || String(item.product_id) === productFilter
+                ));
+                const selectedProduct = products.find(product => String(product.id) === productFilter);
+                return (
                 <section className="agent-customer" key={customer.id}>
                     <h2>{customer.name}</h2>
                     {customer.address && <p>{customer.address}</p>}
-                    {customer.items.length === 0 && <p>No products in today’s register.</p>}
-                    {customer.items.map(item => {
+                    {customer.items.length === 0 && !productFilter && <p>No products in today’s register.</p>}
+                    {productFilter && visibleItems.length === 0 &&
+                        <p>No {selectedProduct?.name || 'matching product'} in today’s register.</p>}
+                    {visibleItems.map(item => {
                         const key = `${customer.id}_${item.product_id}`;
                         const editableUntil = Date.parse(item.editable_until);
                         const quantity = Number(quantities[key]);
                         const canSaveQuantity = Number.isFinite(quantity)
-                            && quantity > 0
+                            && quantity >= 0
                             && quantity !== Number(item.quantity);
                         return (
                             <div className="agent-delivery-row" key={key}>
@@ -216,7 +331,7 @@ export default function AgentDeliveriesPage() {
                                             <input
                                                 className="form-control"
                                                 type="number"
-                                                min="0.01"
+                                                min="0"
                                                 step="0.01"
                                                 value={quantities[key] ?? ''}
                                                 disabled={!item.editable_until || now === null || editableUntil <= now || savingKey === key}
@@ -224,6 +339,7 @@ export default function AgentDeliveriesPage() {
                                                     ...previous,
                                                     [key]: event.target.value,
                                                 }))}
+                                                onBlur={() => restoreEmptyQuantity(key)}
                                             />
                                         </label>
                                         {item.editable_until && now !== null && editableUntil > now &&
@@ -244,13 +360,14 @@ export default function AgentDeliveriesPage() {
                                         <input
                                             className="form-control"
                                             type="number"
-                                            min="0.01"
+                                            min="0"
                                             step="0.01"
                                             value={quantities[key] ?? ''}
                                             onChange={event => setQuantities(previous => ({
                                                 ...previous,
                                                 [key]: event.target.value,
                                             }))}
+                                            onBlur={() => restoreEmptyQuantity(key)}
                                         />
                                     </label>
                                 )}
@@ -267,7 +384,10 @@ export default function AgentDeliveriesPage() {
                         >
                             <option value="">+ Add product</option>
                             {products
-                                .filter(product => !customer.items.some(item => String(item.product_id) === String(product.id)))
+                                .filter(product => (
+                                    (!productFilter || String(product.id) === productFilter)
+                                    && !customer.items.some(item => String(item.product_id) === String(product.id))
+                                ))
                                 .map(product => (
                                     <option key={product.id} value={product.id}>
                                         {product.name} — ₹{Number(product.price || 0).toFixed(2)}
@@ -276,7 +396,42 @@ export default function AgentDeliveriesPage() {
                         </select>
                     </label>
                 </section>
-            ))}
+                );
+            })}
+
+            {Object.keys(productSummary).length > 0 && (
+                <div style={{ marginTop: 24, padding: 18, background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <IconBarChart size={18} /> Agent Product Quantities Summary
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                        {Object.entries(productSummary).map(([productName, info]) => (
+                            <div
+                                key={productName}
+                                style={{
+                                    background: 'var(--background)',
+                                    padding: '12px 14px',
+                                    borderRadius: 10,
+                                    border: '1px solid var(--border)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 4
+                                }}
+                            >
+                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--foreground)' }}>{productName}</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
+                                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#3b82f6' }}>
+                                        {info.totalQty.toFixed(1)} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--muted)' }}>total pkts</span>
+                                    </span>
+                                    <span style={{ fontSize: '0.82rem', color: '#34d399', fontWeight: 600 }}>
+                                        {info.verifiedQty.toFixed(1)} verified
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <button
                 className="btn btn-primary agent-submit"

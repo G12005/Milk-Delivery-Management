@@ -19,10 +19,14 @@ function parseSubscriptions(customer) {
     if (customer.subscribed_product_id) {
         return [{
             product_id: customer.subscribed_product_id,
-            quantity: customer.subscribed_quantity || 1,
+            quantity: customer.subscribed_quantity ?? 0,
         }];
     }
     return [];
+}
+
+function isEmptyQuantity(quantity) {
+    return quantity == null || (typeof quantity === 'string' && quantity.trim() === '');
 }
 
 export async function GET() {
@@ -70,7 +74,9 @@ export async function GET() {
                     product_id: subscription.product_id,
                     product_name: product?.name || 'Product',
                     unit: product?.unit || 'packet',
-                    quantity: existing ? Number(existing.quantity) : Number(subscription.quantity || 1),
+                    quantity: existing
+                        ? Number(existing.quantity ?? 0)
+                        : Number(subscription.quantity ?? 0),
                     delivered: Boolean(existing),
                     delivery_id: existing?.$id || null,
                     submitted_at: existing?.$createdAt || null,
@@ -127,9 +133,9 @@ export async function PATCH(request) {
         const body = await request.json();
         const deliveryId = body?.delivery_id;
         const rawQuantity = body?.quantity;
-        const quantity = Number(rawQuantity);
-        if (!deliveryId || !Number.isFinite(quantity) || quantity <= 0) {
-            return NextResponse.json({ error: 'A valid delivery and quantity are required' }, { status: 400 });
+        const quantity = isEmptyQuantity(rawQuantity) ? 0 : Number(rawQuantity);
+        if (!deliveryId || !Number.isFinite(quantity) || quantity < 0) {
+            return NextResponse.json({ error: 'A valid delivery and non-negative quantity are required' }, { status: 400 });
         }
 
         const db = getDatabases();
@@ -204,9 +210,13 @@ export async function POST(request) {
         for (const item of items) {
             const customerId = String(item?.customer_id || '');
             const productId = String(item?.product_id || '');
-            const quantity = Number(item?.quantity);
+            const emptyQuantity = isEmptyQuantity(item?.quantity);
+            const quantity = emptyQuantity ? 0 : Number(item.quantity);
             const key = `${customerId}_${productId}`;
-            if (!customerId || !productId || !Number.isFinite(quantity) || quantity <= 0 || keys.has(key)) {
+            if (!customerId || !productId
+                || !Number.isFinite(quantity)
+                || quantity < 0
+                || keys.has(key)) {
                 return NextResponse.json({ error: 'Delivery rows contain invalid or duplicate values' }, { status: 400 });
             }
             keys.add(key);
@@ -242,11 +252,14 @@ export async function POST(request) {
             if (existingKeys.has(`${customer.$id}_${product.$id}`)) {
                 return NextResponse.json({ error: 'A submitted delivery cannot be edited or resubmitted' }, { status: 409 });
             }
+            const quantity = isEmptyQuantity(item.quantity)
+                ? 0
+                : Number(item.quantity);
             validated.push({
                 customer_id: customer.$id,
                 product_id: product.$id,
                 delivery_date: today,
-                quantity: Number(item.quantity),
+                quantity,
                 rate: Number(product.price) || 0,
             });
         }

@@ -107,6 +107,32 @@ body {
   color: var(--foreground);
 }
 
+.agent-header .agent-date {
+  margin-bottom: 4px;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.agent-delivery-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.agent-delivery-filter {
+  display: grid;
+  gap: 6px;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .agent-customer {
   margin-bottom: 16px;
 }
