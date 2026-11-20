@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { authorizeRole } from '@/lib/auth-session';
 import { COLLECTIONS, DATABASE_ID, getDatabases, ID, Query } from '@/lib/appwrite';
 
-const EDIT_WINDOW_MS = 2 * 60 * 60 * 1000;
-
 function parseSubscriptions(customer) {
     if (customer.subscriptions) {
         try {
@@ -80,9 +78,6 @@ export async function GET() {
                     delivered: Boolean(existing),
                     delivery_id: existing?.$id || null,
                     submitted_at: existing?.$createdAt || null,
-                    editable_until: existing?.$createdAt
-                        ? new Date(Date.parse(existing.$createdAt) + EDIT_WINDOW_MS).toISOString()
-                        : null,
                 };
             });
             const addedItems = (deliveriesByCustomer.get(customer.$id) || [])
@@ -97,9 +92,6 @@ export async function GET() {
                         delivered: true,
                         delivery_id: delivery.$id,
                         submitted_at: delivery.$createdAt,
-                        editable_until: delivery.$createdAt
-                            ? new Date(Date.parse(delivery.$createdAt) + EDIT_WINDOW_MS).toISOString()
-                            : null,
                     };
                 });
 
@@ -125,17 +117,15 @@ export async function GET() {
     }
 }
 
-export async function PATCH(request) {
+export async function DELETE(request) {
     try {
         const { principal, response } = await authorizeRole('agent');
         if (response) return response;
 
         const body = await request.json();
         const deliveryId = body?.delivery_id;
-        const rawQuantity = body?.quantity;
-        const quantity = isEmptyQuantity(rawQuantity) ? 0 : Number(rawQuantity);
-        if (!deliveryId || !Number.isFinite(quantity) || quantity < 0) {
-            return NextResponse.json({ error: 'A valid delivery and non-negative quantity are required' }, { status: 400 });
+        if (!deliveryId) {
+            return NextResponse.json({ error: 'A valid delivery is required' }, { status: 400 });
         }
 
         const db = getDatabases();
@@ -151,7 +141,7 @@ export async function PATCH(request) {
 
         const today = new Date().toISOString().slice(0, 10);
         if (delivery.delivery_date !== today) {
-            return NextResponse.json({ error: 'Only today’s deliveries can be edited' }, { status: 404 });
+            return NextResponse.json({ error: 'Only today’s deliveries can be unverified' }, { status: 404 });
         }
 
         let customer;
@@ -168,41 +158,27 @@ export async function PATCH(request) {
             return NextResponse.json({ error: 'This delivery is not assigned to you' }, { status: 403 });
         }
 
-        const submittedAt = Date.parse(delivery.$createdAt);
-        if (!Number.isFinite(submittedAt)) {
-            throw new Error('Delivery submission timestamp is invalid');
-        }
-        const editableUntil = submittedAt + EDIT_WINDOW_MS;
-        if (Date.now() >= editableUntil) {
-            return NextResponse.json({ error: 'The 2-hour editing period has expired' }, { status: 409 });
-        }
-
-        const updated = await db.updateDocument(
-            DATABASE_ID,
-            COLLECTIONS.DAILY_DELIVERIES,
-            delivery.$id,
-            { quantity }
-        );
-
-        return NextResponse.json({
-            delivery_id: updated.$id,
-            quantity: Number(updated.quantity),
-            submitted_at: updated.$createdAt,
-            editable_until: new Date(editableUntil).toISOString(),
-        });
+        await db.deleteDocument(DATABASE_ID, COLLECTIONS.DAILY_DELIVERIES, delivery.$id);
+        return NextResponse.json({ deleted: delivery.$id });
     } catch (error) {
-        console.error('Agent delivery update failed:', error);
-        return NextResponse.json({ error: 'Unable to update delivery quantity' }, { status: 500 });
+        console.error('Agent delivery unverification failed:', error);
+        return NextResponse.json({ error: 'Unable to unverify delivery' }, { status: 500 });
     }
 }
+
 export async function POST(request) {
     try {
         const { principal, response } = await authorizeRole('agent');
         if (response) return response;
 
-        const { items } = await request.json();
+        const body = await request.json();
+        const items = Array.isArray(body.items)
+            ? body.items
+            : Array.isArray(body)
+                ? body
+                : [body];
         if (!Array.isArray(items) || items.length === 0 || items.length > 500) {
-            return NextResponse.json({ error: 'Submit between 1 and 500 delivery rows' }, { status: 400 });
+            return NextResponse.json({ error: 'Verify between 1 and 500 delivery rows' }, { status: 400 });
         }
 
         const today = new Date().toISOString().slice(0, 10);
@@ -238,9 +214,10 @@ export async function POST(request) {
 
         const customerMap = new Map(customersRes.documents.map(customer => [customer.$id, customer]));
         const productMap = new Map(productsRes.documents.map(product => [product.$id, product]));
-        const existingKeys = new Set(deliveriesRes.documents.map(delivery => (
-            `${delivery.customer_id}_${delivery.product_id}`
-        )));
+        const existingMap = new Map(deliveriesRes.documents.map(delivery => [
+            `${delivery.customer_id}_${delivery.product_id}`,
+            delivery,
+        ]));
 
         const validated = [];
         for (const item of items) {
@@ -249,13 +226,11 @@ export async function POST(request) {
             if (!customer || !product) {
                 return NextResponse.json({ error: 'A customer or product is not assigned to this agent' }, { status: 403 });
             }
-            if (existingKeys.has(`${customer.$id}_${product.$id}`)) {
-                return NextResponse.json({ error: 'A submitted delivery cannot be edited or resubmitted' }, { status: 409 });
-            }
             const quantity = isEmptyQuantity(item.quantity)
                 ? 0
                 : Number(item.quantity);
             validated.push({
+                existing: existingMap.get(`${customer.$id}_${product.$id}`),
                 customer_id: customer.$id,
                 product_id: product.$id,
                 delivery_date: today,
@@ -264,12 +239,19 @@ export async function POST(request) {
             });
         }
 
-        const results = await Promise.all(validated.map(delivery => db.createDocument(
-            DATABASE_ID,
-            COLLECTIONS.DAILY_DELIVERIES,
-            ID.unique(),
-            delivery
-        )));
+        const results = await Promise.all(validated.map(({ existing, ...delivery }) => existing
+            ? db.updateDocument(
+                DATABASE_ID,
+                COLLECTIONS.DAILY_DELIVERIES,
+                existing.$id,
+                { quantity: delivery.quantity }
+            )
+            : db.createDocument(
+                DATABASE_ID,
+                COLLECTIONS.DAILY_DELIVERIES,
+                ID.unique(),
+                delivery
+            )));
 
         return NextResponse.json({ saved: results.length }, { status: 201 });
     } catch (error) {

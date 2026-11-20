@@ -20,7 +20,7 @@ export default function CustomersPage() {
     const [form, setForm] = useState({
         name: '', phone: '', address: '', route_id: '', agent_id: '',
         billing_cycle: '1-to-last', payment_type: 'postpaid',
-        subscriptions: [{ product_id: '', quantity: 1 }],
+        subscriptions: [],
     });
 
     const fetchData = async () => {
@@ -109,25 +109,23 @@ export default function CustomersPage() {
 
     const openAdd = () => {
         setEditing(null);
-        const prodList = Array.isArray(products) ? products : [];
         setForm({
             name: '', phone: '', address: '', route_id: '', agent_id: '',
             billing_cycle: '1-to-last', payment_type: 'postpaid',
-            subscriptions: [{ product_id: prodList[0]?.id || '', quantity: 1 }],
+            subscriptions: [],
         });
         setShowModal(true);
     };
 
     const openEdit = (c) => {
         setEditing(c);
-        const prodList = Array.isArray(products) ? products : [];
         let subs = [];
         if (Array.isArray(c?.parsed_subscriptions) && c.parsed_subscriptions.length > 0) {
             subs = c.parsed_subscriptions.map(s => ({ product_id: s?.product_id || '', quantity: s?.quantity || 1 }));
         } else if (c?.subscribed_product_id) {
             subs = [{ product_id: c.subscribed_product_id, quantity: c.subscribed_quantity || 1 }];
         } else {
-            subs = [{ product_id: prodList[0]?.id || '', quantity: 1 }];
+            subs = [];
         }
 
         setForm({
@@ -154,7 +152,7 @@ export default function CustomersPage() {
     };
 
     const removeSubRow = (index) => {
-        if (!form.subscriptions || form.subscriptions.length <= 1) return;
+        if (!form.subscriptions || form.subscriptions.length === 0) return;
         setForm({
             ...form,
             subscriptions: form.subscriptions.filter((_, i) => i !== index)
@@ -354,7 +352,7 @@ export default function CustomersPage() {
 
                     <div style={{ background: 'var(--background)', padding: 12, borderRadius: 8, marginBottom: 14, border: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <label style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem' }}>Subscribed Products & Daily Quantities *</label>
+                            <label style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem' }}>Subscribed Products & Daily Quantities (optional)</label>
                             <button type="button" className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.78rem' }} onClick={addSubRow}>+ Add Product</button>
                         </div>
                         {(form.subscriptions || []).map((sub, idx) => (
@@ -368,7 +366,7 @@ export default function CustomersPage() {
                                 <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                                     <input className="form-control" type="number" step="0.5" min="0.5" required placeholder="Qty" value={sub.quantity} onChange={(e) => handleSubChange(idx, 'quantity', e.target.value)} />
                                 </div>
-                                {(form.subscriptions || []).length > 1 && (
+                                {(form.subscriptions || []).length > 0 && (
                                     <button type="button" className="btn-icon" onClick={() => removeSubRow(idx)} style={{ marginTop: 0 }}><IconTrash size={14} /></button>
                                 )}
                             </div>

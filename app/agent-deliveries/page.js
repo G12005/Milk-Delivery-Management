@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { IconBarChart } from '../components/Icons';
+import { IconBarChart, IconSquare, IconCheckSquare, IconLoader } from '../components/Icons';
 
 async function fetchAssignedDeliveries() {
     const response = await fetch('/api/agent-deliveries');
@@ -50,9 +50,9 @@ export default function AgentDeliveriesPage() {
     const [productFilter, setProductFilter] = useState('');
     const [quantities, setQuantities] = useState({});
     const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
     const [savingKey, setSavingKey] = useState('');
-    const [now, setNow] = useState(null);
+    const [verifyingAll, setVerifyingAll] = useState(false);
+    const [pendingVerification, setPendingVerification] = useState({});
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
 
@@ -94,13 +94,26 @@ export default function AgentDeliveriesPage() {
                 const quantity = Number.isFinite(parsedQuantity) ? parsedQuantity : 0;
                 summary[productName].totalQty += quantity;
                 summary[productName].count += 1;
-                if (item.delivered && quantity === Number(item.quantity)) {
+                if (item.delivered && !pendingVerification[key]) {
                     summary[productName].verifiedQty += quantity;
                 }
             });
         });
         return summary;
-    }, [filteredCustomers, productFilter, quantities]);
+    }, [filteredCustomers, productFilter, quantities, pendingVerification]);
+
+    const visibleItems = useMemo(() => filteredCustomers.flatMap(customer =>
+        customer.items
+            .filter(item => !productFilter || String(item.product_id) === productFilter)
+            .map(item => ({
+                customer,
+                item,
+                key: `${customer.id}_${item.product_id}`,
+                isVerified: item.delivered && !pendingVerification[`${customer.id}_${item.product_id}`],
+            }))
+    ), [filteredCustomers, productFilter, pendingVerification]);
+
+    const pendingItems = visibleItems.filter(row => !row.isVerified);
 
     useEffect(() => {
         let isActive = true;
@@ -122,25 +135,6 @@ export default function AgentDeliveriesPage() {
             isActive = false;
         };
     }, []);
-
-    useEffect(() => {
-        const updateNow = () => setNow(Date.now());
-        updateNow();
-        const timer = setInterval(updateNow, 30_000);
-        return () => clearInterval(timer);
-    }, []);
-
-    const pendingItems = useMemo(() => customers.flatMap(customer =>
-        customer.items
-            .filter(item => !item.delivered)
-            .map(item => ({
-                customer_id: customer.id,
-                product_id: item.product_id,
-                quantity: isEmptyQuantity(quantities[`${customer.id}_${item.product_id}`])
-                    ? 0
-                    : quantities[`${customer.id}_${item.product_id}`],
-            }))
-    ), [customers, quantities]);
 
     const restoreEmptyQuantity = key => {
         setQuantities(previous => isEmptyQuantity(previous[key])
@@ -164,7 +158,6 @@ export default function AgentDeliveriesPage() {
             delivered: false,
             delivery_id: null,
             submitted_at: null,
-            editable_until: null,
         };
         setCustomers(previous => previous.map(item => item.id === customerId
             ? { ...item, items: [...item.items, newItem] }
@@ -175,55 +168,68 @@ export default function AgentDeliveriesPage() {
         }));
     };
 
-    const submitDeliveries = async () => {
-        setSubmitting(true);
+    const verifyDelivery = async (customerId, item, key) => {
+        setSavingKey(key);
+        setError('');
+        setMessage('');
+        try {
+            const response = await fetch('/api/agent-deliveries', {
+                method: item.delivered && !pendingVerification[key] ? 'DELETE' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item.delivered && !pendingVerification[key]
+                    ? { delivery_id: item.delivery_id }
+                    : {
+                        items: [{
+                            customer_id: customerId,
+                            product_id: item.product_id,
+                            quantity: isEmptyQuantity(quantities[key]) ? 0 : quantities[key],
+                        }],
+                    }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Could not verify delivery');
+            setPendingVerification(previous => {
+                const next = { ...previous };
+                delete next[key];
+                return next;
+            });
+            setMessage(item.delivered && !pendingVerification[key]
+                ? 'Delivery unverified.'
+                : 'Delivery verified.');
+            await loadDeliveries();
+        } catch (verifyError) {
+            setError(verifyError.message);
+        } finally {
+            setSavingKey('');
+        }
+    };
+
+    const handleVerifyAll = async () => {
+        if (pendingItems.length === 0) return;
+        setVerifyingAll(true);
         setError('');
         setMessage('');
         try {
             const response = await fetch('/api/agent-deliveries', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: pendingItems }),
-            });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Could not submit deliveries');
-            setMessage(`Submitted ${data.saved} deliveries.`);
-            await loadDeliveries();
-        } catch (submitError) {
-            setError(submitError.message);
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    const saveQuantity = async (item, key) => {
-        setSavingKey(key);
-        setError('');
-        setMessage('');
-        try {
-            const response = await fetch('/api/agent-deliveries', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    delivery_id: item.delivery_id,
-                    quantity: quantities[key],
+                    items: pendingItems.map(({ customer, item, key }) => ({
+                        customer_id: customer.id,
+                        product_id: item.product_id,
+                        quantity: isEmptyQuantity(quantities[key]) ? 0 : quantities[key],
+                    })),
                 }),
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Could not update delivery quantity');
-
-            setCustomers(previous => previous.map(customer => ({
-                ...customer,
-                items: customer.items.map(delivery => delivery.delivery_id === data.delivery_id
-                    ? { ...delivery, quantity: data.quantity, editable_until: data.editable_until }
-                    : delivery),
-            })));
-            setQuantities(previous => ({ ...previous, [key]: String(data.quantity) }));
-            setMessage('Quantity updated.');
-        } catch (updateError) {
-            setError(updateError.message);
+            if (!response.ok) throw new Error(data.error || 'Could not verify deliveries');
+            setPendingVerification({});
+            setMessage(`Verified ${data.saved} deliveries.`);
+            await loadDeliveries();
+        } catch (verifyError) {
+            setError(verifyError.message);
         } finally {
-            setSavingKey('');
+            setVerifyingAll(false);
         }
     };
 
@@ -248,7 +254,16 @@ export default function AgentDeliveriesPage() {
                     <p className="agent-date">Date: {formatDeliveryDate(deliveryDate)}</p>
                     <p>Only customers assigned to your account appear here.</p>
                 </div>
-                <button className="btn btn-secondary" onClick={signOut}>Sign out</button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleVerifyAll}
+                        disabled={pendingItems.length === 0 || verifyingAll}
+                    >
+                        {verifyingAll ? 'Verifying…' : `✓ Verify All Pending (${pendingItems.length})`}
+                    </button>
+                    <button className="btn btn-secondary" onClick={signOut}>Sign out</button>
+                </div>
             </header>
 
             <div className="agent-delivery-filters">
@@ -316,61 +331,57 @@ export default function AgentDeliveriesPage() {
                         <p>No {selectedProduct?.name || 'matching product'} in today’s register.</p>}
                     {visibleItems.map(item => {
                         const key = `${customer.id}_${item.product_id}`;
-                        const editableUntil = Date.parse(item.editable_until);
-                        const quantity = Number(quantities[key]);
-                        const canSaveQuantity = Number.isFinite(quantity)
-                            && quantity >= 0
-                            && quantity !== Number(item.quantity);
+                        const isVerified = item.delivered && !pendingVerification[key];
                         return (
                             <div className="agent-delivery-row" key={key}>
                                 <span>{item.product_name}</span>
-                                {item.delivered ? (
-                                    <div className="agent-delivery-edit">
-                                        <label>
-                                            <span>Submitted quantity ({item.unit})</span>
-                                            <input
-                                                className="form-control"
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                value={quantities[key] ?? ''}
-                                                disabled={!item.editable_until || now === null || editableUntil <= now || savingKey === key}
-                                                onChange={event => setQuantities(previous => ({
-                                                    ...previous,
-                                                    [key]: event.target.value,
-                                                }))}
-                                                onBlur={() => restoreEmptyQuantity(key)}
-                                            />
-                                        </label>
-                                        {item.editable_until && now !== null && editableUntil > now &&
-                                            <>
-                                                <button
-                                                    className="btn btn-secondary"
-                                                    onClick={() => saveQuantity(item, key)}
-                                                    disabled={savingKey === key || !canSaveQuantity}
-                                                >
-                                                    {savingKey === key ? 'Saving…' : 'Save quantity'}
-                                                </button>
-                                            </>
-                                        }
-                                    </div>
-                                ) : (
-                                    <label>
-                                        <span>Quantity ({item.unit})</span>
-                                        <input
-                                            className="form-control"
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={quantities[key] ?? ''}
-                                            onChange={event => setQuantities(previous => ({
+                                <label>
+                                    <span>Quantity ({item.unit})</span>
+                                    <input
+                                        className="form-control"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={quantities[key] ?? ''}
+                                        disabled={savingKey === key || verifyingAll}
+                                        onChange={event => {
+                                            setQuantities(previous => ({
                                                 ...previous,
                                                 [key]: event.target.value,
-                                            }))}
-                                            onBlur={() => restoreEmptyQuantity(key)}
-                                        />
-                                    </label>
-                                )}
+                                            }));
+                                            if (item.delivered) {
+                                                setPendingVerification(previous => ({ ...previous, [key]: true }));
+                                            }
+                                        }}
+                                        onBlur={() => restoreEmptyQuantity(key)}
+                                    />
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => verifyDelivery(customer.id, item, key)}
+                                    disabled={savingKey === key || verifyingAll}
+                                    style={{
+                                        background: isVerified ? 'rgba(52,211,153,0.2)' : 'var(--background)',
+                                        border: isVerified ? '1px solid #34d399' : '1px solid var(--border)',
+                                        color: isVerified ? '#34d399' : 'var(--muted)',
+                                        padding: '6px 14px',
+                                        borderRadius: 8,
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                    }}
+                                >
+                                    {savingKey === key ? (
+                                        <><IconLoader size={14} /> Saving…</>
+                                    ) : isVerified ? (
+                                        <><IconCheckSquare size={14} /> Verified</>
+                                    ) : (
+                                        <><IconSquare size={14} /> Verify</>
+                                    )}
+                                </button>
                             </div>
                         );
                     })}
@@ -379,7 +390,6 @@ export default function AgentDeliveriesPage() {
                         <select
                             className="form-control"
                             value=""
-                            disabled={submitting}
                             onChange={event => addProductForCustomer(customer.id, event.target.value)}
                         >
                             <option value="">+ Add product</option>
@@ -433,13 +443,6 @@ export default function AgentDeliveriesPage() {
                 </div>
             )}
 
-            <button
-                className="btn btn-primary agent-submit"
-                onClick={submitDeliveries}
-                disabled={submitting || pendingItems.length === 0}
-            >
-                {submitting ? 'Submitting…' : `Submit pending deliveries (${pendingItems.length})`}
-            </button>
         </div>
     );
 }
